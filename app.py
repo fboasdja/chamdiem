@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect, session, jsonify
-import sqlite3, datetime, time
+import sqlite3, datetime, time, os
 from thongke import thong_ke_theo_thang, top_nguoi_diem_cao
 from api import api
 from nhatky import lay_nhat_ky
@@ -7,7 +7,11 @@ from nhatky import lay_nhat_ky
 
 app = Flask(__name__)
 app.secret_key = "secret_xulyan"
-DB_NAME = "database.db"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_DIR = os.path.join(BASE_DIR, "database")
+DB_NAME = os.path.join(BASE_DIR, "database.db")
+DB_TRU = os.path.join(DB_DIR, "databaseTRU.db")
+DB_LS = os.path.join(DB_DIR, "databaseLS.db")
 
 # Thời gian timeout session (giây) - 1 tiếng
 SESSION_TIMEOUT = 60 * 60
@@ -28,6 +32,17 @@ def get_db():
     return conn
 
 def init_db():
+    # Tạo thư mục database và 2 file riêng cho TRU / LS (dùng cho tương lai / backup)
+    try:
+        os.makedirs(DB_DIR, exist_ok=True)
+        for path in (DB_TRU, DB_LS):
+            if not os.path.exists(path):
+                tmp_conn = sqlite3.connect(path)
+                tmp_conn.close()
+    except Exception:
+        # Không để lỗi phần này ảnh hưởng DB chính
+        pass
+
     conn = get_db()
     c = conn.cursor()
 
@@ -40,7 +55,8 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         username TEXT UNIQUE,
         password TEXT,
-        role TEXT DEFAULT 'user'
+        role TEXT DEFAULT 'user',
+        so_allowed TEXT DEFAULT 'TRU'
     )
     """)
     
@@ -50,9 +66,16 @@ def init_db():
     except:
         pass
 
+    # Thêm cột so_allowed nếu chưa có (TRU/LS/ALL)
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN so_allowed TEXT DEFAULT 'TRU'")
+    except:
+        pass
+
     c.execute("""
     CREATE TABLE IF NOT EXISTS records(
         id INTEGER PRIMARY KEY AUTOINCREMENT,
+        so TEXT DEFAULT 'TRU',
         chuc_vu TEXT,
         name TEXT,
         giao_thong INTEGER,
@@ -85,12 +108,28 @@ def init_db():
     except:
         pass
 
+    # Thêm cột so nếu chưa có (tách dữ liệu TRU/LS)
+    try:
+        c.execute("ALTER TABLE records ADD COLUMN so TEXT DEFAULT 'TRU'")
+    except:
+        pass
+
+    # Backfill so cho dữ liệu cũ (mặc định TRU)
+    try:
+        c.execute("UPDATE records SET so='TRU' WHERE so IS NULL OR TRIM(so) = ''")
+    except:
+        pass
+
     # Cập nhật công thức: Tổng = 1-5 + 6; Điểm = giao_thong + 1-5 + 6*2 + GS - án sai*5
     try:
         c.execute("""
             UPDATE records SET
                 tong_an = COALESCE(xa_1_4,0) + COALESCE(xa_5_6,0),
-                diem = COALESCE(giao_thong,0) + COALESCE(xa_1_4,0) + COALESCE(xa_5_6,0)*2 + COALESCE(giam_sat,0) - COALESCE(an_sai,0)*5
+                diem = COALESCE(giao_thong,0)*1
+                     + COALESCE(xa_1_4,0)*2
+                     + COALESCE(xa_5_6,0)*4
+                     + COALESCE(giam_sat,0)*1
+                     - COALESCE(an_sai,0)*5
         """)
     except:
         pass
@@ -119,14 +158,31 @@ def init_db():
     # NOTE: bảng login_codes (nếu đã tồn tại từ bản cũ) sẽ giữ nguyên để không phá DB,
     # nhưng hệ thống không còn dùng login bằng code nữa.
 
+    # Settings đơn giản (dùng cho tiêu đề thống kê tháng, ...)
+    c.execute("""
+    CREATE TABLE IF NOT EXISTS settings(
+        key TEXT PRIMARY KEY,
+        value TEXT
+    )
+    """)
+    c.execute(
+        "INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)",
+        ("monthly_title", "THỐNG KÊ ĐIỂM THÁNG")
+    )
+
     # Đảm bảo account admin có role admin
     c.execute(
-        "INSERT OR IGNORE INTO users(username,password,role) VALUES('admin','admin','admin')"
+        "INSERT OR IGNORE INTO users(username,password,role,so_allowed) VALUES('admin','admin','admin','ALL')"
     )
     # Cập nhật lại role cho admin nếu đã tồn tại
     c.execute(
         "UPDATE users SET role='admin' WHERE username='admin'"
     )
+    # Admin luôn ALL sở
+    try:
+        c.execute("UPDATE users SET so_allowed='ALL' WHERE username='admin'")
+    except:
+        pass
 
     conn.commit()
     conn.close()
@@ -143,6 +199,31 @@ def _is_api_request():
     return path.startswith("/api/")
 
 
+def _normalize_so(value: str | None) -> str:
+    v = (value or "").strip().upper()
+    return v if v in ("TRU", "LS") else "TRU"
+
+
+def _effective_so_for_session(role: str, so_allowed: str, requested_so: str | None) -> str:
+    req = _normalize_so(requested_so)
+    allowed = (so_allowed or "TRU").strip().upper()
+    if role == "admin" or allowed == "ALL":
+        return req
+    # user/editer: luôn bị khóa theo sở được cấp
+    return _normalize_so(allowed)
+
+
+def get_setting(key: str, default: str = "") -> str:
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT value FROM settings WHERE key=?", (key,))
+    row = c.fetchone()
+    conn.close()
+    if not row:
+        return default
+    return row["value"] or default
+
+
 @app.before_request
 def check_session_and_user():
     """
@@ -150,8 +231,8 @@ def check_session_and_user():
     - Mỗi request sẽ refresh lại role từ DB để F5 là cập nhật quyền mới.
     - Nếu tài khoản bị xóa, trả về thông báo phù hợp và đưa về trang login.
     """
-    # Bỏ qua static và healthcheck
-    if request.path.startswith("/static/") or request.path == "/health":
+    # Bỏ qua static, healthcheck và trang heal trắng
+    if request.path.startswith("/static/") or request.path in ("/health", "/heal"):
         return
 
     # Trang login tự xử lý, không cần kiểm tra
@@ -185,7 +266,7 @@ def check_session_and_user():
     # Kiểm tra user còn tồn tại và lấy lại role từ DB
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT username, role FROM users WHERE username=?", (username,))
+    c.execute("SELECT username, role, so_allowed FROM users WHERE username=?", (username,))
     row = c.fetchone()
     conn.close()
 
@@ -205,6 +286,20 @@ def check_session_and_user():
     else:
         session["role"] = db_role
 
+    # Cập nhật lại so_allowed trong session theo DB
+    db_so_allowed = (row["so_allowed"] or "TRU").strip().upper() if "so_allowed" in row.keys() else "TRU"
+    if session.get("role") == "admin" or username == "admin":
+        session["so_allowed"] = "ALL"
+    else:
+        session["so_allowed"] = db_so_allowed if db_so_allowed in ("TRU", "LS", "ALL") else "TRU"
+
+    # Đảm bảo current_so hợp lệ theo quyền hiện tại
+    session["current_so"] = _effective_so_for_session(
+        session.get("role", "user"),
+        session.get("so_allowed", "TRU"),
+        session.get("current_so", "TRU"),
+    )
+
 # ================= API FOR DISCORD BOT =================
 @app.route("/api/addaccount", methods=["POST"])
 def add_account():
@@ -216,10 +311,15 @@ def add_account():
     username = data.get("username")
     password = data.get("password")
     role = data.get("role", "user")
+    so = (data.get("so") or "TRU").strip().upper()
     
     # Validate role
     if role not in ["admin", "editer", "user"]:
         return jsonify(success=False, error="Role không hợp lệ. Chỉ có: admin, editer, user")
+
+    # Validate so
+    if so not in ["TRU", "LS"]:
+        so = "TRU"
     
     if not username or not password:
         return jsonify(success=False, error="Thiếu username hoặc password")
@@ -238,8 +338,8 @@ def add_account():
             return jsonify(success=False, error="Tài khoản đã tồn tại")
 
         c.execute(
-            "INSERT INTO users(username, password, role) VALUES(?, ?, ?)",
-            (username, password, role)
+            "INSERT INTO users(username, password, role, so_allowed) VALUES(?, ?, ?, ?)",
+            (username, password, role, "ALL" if role == "admin" else so)
         )
         print("[/api/addaccount] -> inserted OK, committing...")
         conn.commit()
@@ -283,7 +383,7 @@ def api_users():
         return jsonify(success=False, error="Không có quyền (chỉ admin)"), 403
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT id, username, password, role FROM users ORDER BY id ASC")
+    c.execute("SELECT id, username, password, role, so_allowed FROM users ORDER BY id ASC")
     rows = c.fetchall()
     conn.close()
     return jsonify(
@@ -294,6 +394,7 @@ def api_users():
                 "username": r["username"],
                 "password": r["password"],
                 "role": r["role"],
+                "so": (r["so_allowed"] if (r["so_allowed"] or "").upper() in ("TRU", "LS") else "TRU"),
             }
             for r in rows
         ],
@@ -310,10 +411,46 @@ def api_update_user_role(user_id: int):
     conn = get_db()
     c = conn.cursor()
     c.execute("UPDATE users SET role=? WHERE id=?", (role, user_id))
+    # Nếu set admin thì cho ALL sở
+    if role == "admin":
+        try:
+            c.execute("UPDATE users SET so_allowed='ALL' WHERE id=?", (user_id,))
+        except Exception:
+            pass
     conn.commit()
     conn.close()
     from nhatky import them_nhat_ky
     them_nhat_ky("EDIT_ROLE", None, session.get("username", "Admin"), f"Đổi quyền user_id={user_id} -> {role}")
+    return jsonify(success=True)
+
+
+@app.post("/api/users/<int:user_id>/so")
+def api_update_user_so(user_id: int):
+    if not session.get("login") or session.get("role") != "admin":
+        return jsonify(success=False, error="Không có quyền (chỉ admin)"), 403
+    data = request.json or {}
+    so = (data.get("so") or "").strip().upper()
+    if so not in ("TRU", "LS"):
+        return jsonify(success=False, error="Sở không hợp lệ"), 400
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT username, role FROM users WHERE id=?", (user_id,))
+    row = c.fetchone()
+    if not row:
+        conn.close()
+        return jsonify(success=False, error="User không tồn tại"), 404
+    if row["username"] == "admin":
+        conn.close()
+        return jsonify(success=False, error="Không thể đổi sở của admin"), 400
+    # Admin luôn ALL sở (nếu user là admin thì không cho set TRU/LS)
+    if (row["role"] or "").strip().lower() == "admin":
+        c.execute("UPDATE users SET so_allowed='ALL' WHERE id=?", (user_id,))
+    else:
+        c.execute("UPDATE users SET so_allowed=? WHERE id=?", (so, user_id))
+    conn.commit()
+    conn.close()
+    from nhatky import them_nhat_ky
+    them_nhat_ky("EDIT_SO", None, session.get("username", "Admin"), f"Đổi sở user_id={user_id} -> {so}")
     return jsonify(success=True)
 
 @app.delete("/api/users/<int:user_id>")
@@ -336,6 +473,47 @@ def api_delete_user(user_id: int):
     from nhatky import them_nhat_ky
     them_nhat_ky("DELETE_USER", None, session.get("username", "Admin"), f"Xóa user {row['username']} (id={user_id})")
     return jsonify(success=True)
+
+
+@app.post("/api/admin/reset_data")
+def api_admin_reset_data():
+    """
+    Reset dữ liệu records theo sở (TRU/LS) hoặc ALL.
+    Dùng để đảm bảo 2 sở là 2 data riêng, và tiện dọn dữ liệu test.
+    """
+    if not session.get("login") or session.get("role") != "admin":
+        return jsonify(success=False, error="Không có quyền (chỉ admin)"), 403
+
+    data = request.json or {}
+    so = (data.get("so") or "CURRENT").strip().upper()
+    if so == "CURRENT":
+        so = _normalize_so(session.get("current_so", "TRU"))
+    if so not in ("TRU", "LS", "ALL"):
+        return jsonify(success=False, error="Tham số so không hợp lệ"), 400
+
+    conn = get_db()
+    c = conn.cursor()
+    try:
+        if so == "ALL":
+            # Xoá logs trước để tránh giữ record_id mồ côi (không bắt buộc, nhưng sạch)
+            c.execute("DELETE FROM logs")
+            c.execute("DELETE FROM records")
+        else:
+            # Xóa logs thuộc records của sở đó
+            try:
+                c.execute("DELETE FROM logs WHERE record_id IN (SELECT id FROM records WHERE so=?)", (so,))
+            except Exception:
+                pass
+            c.execute("DELETE FROM records WHERE so=?", (so,))
+
+        write_log(c, "RESET_DATA", None, session.get("username", "Admin"), f"Reset dữ liệu so={so}")
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify(success=False, error=str(e)), 500
+    conn.close()
+    return jsonify(success=True, so=so)
 
 def write_log(c, action, record_id, user_name=None, details=None):
     if user_name is None:
@@ -385,8 +563,11 @@ def can_view_diem(session):
 @app.route("/", methods=["GET","POST"])
 def login():
     if request.method == "POST":
-        u = request.form["username"]
-        p = request.form["password"]
+        u = (request.form.get("username") or "").strip()
+        p = (request.form.get("password") or "").strip()
+
+        if not u or not p:
+            return render_template("login.html", login_error="Vui lòng nhập đầy đủ tài khoản và mật khẩu", last_username=u)
 
         conn = get_db()
         c = conn.cursor()
@@ -405,11 +586,37 @@ def login():
             # Kiểm tra và đảm bảo admin có full quyền
             if user_role == "admin" or u == "admin":
                 session["role"] = "admin"
+                session["so_allowed"] = "ALL"
             else:
                 session["role"] = user_role
-            return redirect("/dashboard")
+                so_allowed = (ok["so_allowed"] if "so_allowed" in ok.keys() else "TRU") or "TRU"
+                so_allowed = so_allowed.strip().upper()
+                session["so_allowed"] = so_allowed if so_allowed in ("TRU", "LS", "ALL") else "TRU"
+
+            session["current_so"] = _effective_so_for_session(
+                session.get("role", "user"),
+                session.get("so_allowed", "TRU"),
+                session.get("current_so", "TRU"),
+            )
+            # Render UI thành công trước rồi redirect bằng JS (mượt hơn)
+            return render_template("login.html", login_success=True, last_username=u)
+
+        return render_template("login.html", login_error="Sai tài khoản hoặc mật khẩu", last_username=u)
 
     return render_template("login.html")
+
+
+@app.get("/heal")
+def heal_page():
+    """Trang trắng đơn giản để treo / ping server."""
+    return (
+        "<!DOCTYPE html><html><head><meta charset='utf-8'><title>Heal</title></head>"
+        "<body style='background:#0b1120;color:#e5e7eb;font-family:system-ui, sans-serif;'>"
+        "<div style='display:flex;align-items:center;justify-content:center;height:100vh;'>"
+        "<div>Heal OK</div>"
+        "</div>"
+        "</body></html>"
+    )
 
 # ================= DASHBOARD =================
 @app.route("/dashboard", methods=["GET","POST"])
@@ -419,6 +626,13 @@ def dashboard():
 
     conn = get_db()
     c = conn.cursor()
+
+    # Xác định sở hiện tại (TRU/LS) theo quyền và query param
+    requested_so = request.args.get("so")
+    user_role = get_user_role(session)
+    so_allowed = session.get("so_allowed", "TRU")
+    current_so = _effective_so_for_session(user_role, so_allowed, requested_so or session.get("current_so", "TRU"))
+    session["current_so"] = current_so
 
     if request.method == "POST":
         # Chỉ admin và editer mới được thêm
@@ -445,22 +659,19 @@ def dashboard():
 
         # Tổng = chỉ 1-5 + 6 (không giao thông, không GS, không án sai)
         tong_an = xa_1_4 + xa_5_6
-        # Điểm = giao_thong + 1-5 (+1) + 6 (+2) + GS (+1), án sai -5
-        diem = giao_thong + xa_1_4 + xa_5_6*2 + giam_sat - an_sai*5
+        # Điểm = Giao thông*1 + 1-5*2 + 6*4 + Giám sát*1 - Án sai*5
+        diem = giao_thong*1 + xa_1_4*2 + xa_5_6*4 + giam_sat*1 - an_sai*5
 
         c.execute("""
         INSERT INTO records
-        (chuc_vu,name,giao_thong,xa_1_4,xa_5_6,giam_sat,an_sai,tong_an,diem,created_at,user_id)
-        VALUES(?,?,?,?,?,?,?,?,?,datetime('now'),?)
-        """,(chuc_vu,name,giao_thong,xa_1_4,xa_5_6,giam_sat,an_sai,tong_an,diem,user_id))
+        (so,chuc_vu,name,giao_thong,xa_1_4,xa_5_6,giam_sat,an_sai,tong_an,diem,created_at,user_id)
+        VALUES(?,?,?,?,?,?,?,?,?,?,datetime('now'),?)
+        """,(current_so,chuc_vu,name,giao_thong,xa_1_4,xa_5_6,giam_sat,an_sai,tong_an,diem,user_id))
 
         user_name = session.get("username", "Unknown")
         write_log(c, "ADD", c.lastrowid, user_name, f"Thêm record: {name}")
         conn.commit()
 
-    # Kiểm tra quyền
-    user_role = get_user_role(session)
-    
     can_see_main = can_view_main(session)
     can_see_diem = can_view_diem(session)
     
@@ -468,6 +679,7 @@ def dashboard():
     if can_see_main or can_see_diem:
         c.execute("""
             SELECT * FROM records
+            WHERE so = ?
             ORDER BY
                 CASE chuc_vu
                     WHEN 'Cảnh sát viên' THEN 1
@@ -476,7 +688,7 @@ def dashboard():
                     ELSE 4
                 END,
                 diem DESC
-        """)
+        """, (current_so,))
         data = c.fetchall()
     else:
         data = []
@@ -497,6 +709,10 @@ def dashboard():
         can_see_diem=can_see_diem,
         can_see_logs=can_see_logs,
         nhat_ky=nhat_ky,
+        current_so=current_so,
+        so_allowed=so_allowed,
+        monthly_title=get_setting("monthly_title", "THỐNG KÊ ĐIỂM THÁNG"),
+        can_edit_title=(user_role == "admin"),
     )
 
 # ================= INLINE EDIT (ENTER LƯU) =================
@@ -524,6 +740,25 @@ def inline_edit():
 
     conn = get_db()
     c = conn.cursor()
+
+    # Chặn sửa record khác sở (trừ admin khi đang chọn sở đó)
+    current_so = _effective_so_for_session(
+        get_user_role(session),
+        session.get("so_allowed", "TRU"),
+        session.get("current_so", "TRU"),
+    )
+    try:
+        c.execute("SELECT so FROM records WHERE id=?", (rid,))
+        row_so = c.fetchone()
+        if not row_so:
+            conn.close()
+            return jsonify(success=False, error="Record không tồn tại"), 404
+        if _normalize_so(row_so["so"]) != _normalize_so(current_so):
+            conn.close()
+            return jsonify(success=False, error="Không có quyền sửa dữ liệu sở khác"), 403
+    except Exception:
+        # Nếu DB cũ chưa có cột so, bỏ qua
+        pass
 
     allowed_fields = {"chuc_vu", "name", "giao_thong", "xa_1_4", "xa_5_6", "giam_sat", "an_sai", "user_id"}
     if field not in allowed_fields:
@@ -561,8 +796,8 @@ def inline_edit():
 
     # Tổng = chỉ 1-5 + 6 (không giao thông, không GS, không án sai)
     tong_an = xa_1_4 + xa_5_6
-    # Điểm = giao_thong + 1-5 (+1) + 6 (+2) + GS (+1), án sai -5
-    diem = giao_thong + xa_1_4 + xa_5_6*2 + giam_sat - an_sai*5
+    # Điểm = Giao thông*1 + 1-5*2 + 6*4 + Giám sát*1 - Án sai*5
+    diem = giao_thong*1 + xa_1_4*2 + xa_5_6*4 + giam_sat*1 - an_sai*5
 
     c.execute(
         "UPDATE records SET tong_an=?, diem=? WHERE id=?",
@@ -592,9 +827,22 @@ def delete(id):
     conn = get_db()
     c = conn.cursor()
     # Lấy tên record trước khi xóa
-    c.execute("SELECT name FROM records WHERE id=?", (id,))
+    c.execute("SELECT name, so FROM records WHERE id=?", (id,))
     record = c.fetchone()
     record_name = record["name"] if record else "Unknown"
+
+    # Chặn xóa record khác sở
+    try:
+        current_so = _effective_so_for_session(
+            get_user_role(session),
+            session.get("so_allowed", "TRU"),
+            session.get("current_so", "TRU"),
+        )
+        if record and _normalize_so(record["so"]) != _normalize_so(current_so):
+            conn.close()
+            return redirect("/dashboard")
+    except Exception:
+        pass
     
     c.execute("DELETE FROM records WHERE id=?", (id,))
     user_name = session.get("username", "Unknown")
@@ -603,6 +851,22 @@ def delete(id):
     conn.close()
 
     return redirect("/dashboard")
+
+
+@app.post("/api/settings/monthly_title")
+def api_set_monthly_title():
+    if not session.get("login") or session.get("role") != "admin":
+        return jsonify(success=False, error="Không có quyền (chỉ admin)"), 403
+    data = request.json or {}
+    title = (data.get("title") or "").strip()
+    if not title:
+        return jsonify(success=False, error="Tiêu đề không được để trống"), 400
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", ("monthly_title", title))
+    conn.commit()
+    conn.close()
+    return jsonify(success=True, title=title)
 
 @app.route("/logout")
 def logout():

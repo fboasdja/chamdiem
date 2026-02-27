@@ -12,7 +12,7 @@ def get_db():
     return conn
 
 
-def thong_ke_theo_thang(nam=None):
+def thong_ke_theo_thang(nam=None, so=None):
     if not nam:
         nam = datetime.now().year
 
@@ -26,23 +26,50 @@ def thong_ke_theo_thang(nam=None):
     except:
         has_created_at = False
 
+    # Kiểm tra có cột so không
+    try:
+        c.execute("SELECT so FROM records LIMIT 1")
+        has_so = True
+    except:
+        has_so = False
+
     if has_created_at:
-        c.execute("""
-            SELECT 
-                strftime('%m', created_at) AS thang,
-                SUM(tong_an) AS tong_ps
-            FROM records
-            WHERE strftime('%Y', created_at) = ?
-            GROUP BY thang
-            ORDER BY thang
-        """, (str(nam),))
+        if has_so and so in ("TRU", "LS"):
+            c.execute("""
+                SELECT 
+                    strftime('%m', created_at) AS thang,
+                    SUM(tong_an) AS tong_ps
+                FROM records
+                WHERE strftime('%Y', created_at) = ?
+                  AND so = ?
+                GROUP BY thang
+                ORDER BY thang
+            """, (str(nam), so))
+        else:
+            c.execute("""
+                SELECT 
+                    strftime('%m', created_at) AS thang,
+                    SUM(tong_an) AS tong_ps
+                FROM records
+                WHERE strftime('%Y', created_at) = ?
+                GROUP BY thang
+                ORDER BY thang
+            """, (str(nam),))
     else:
         # Nếu không có created_at, trả về tổng PS cho tất cả records
-        c.execute("""
-            SELECT 
-                '01' AS thang, SUM(tong_an) AS tong_ps
-            FROM records
-        """)
+        if has_so and so in ("TRU", "LS"):
+            c.execute("""
+                SELECT 
+                    '01' AS thang, SUM(tong_an) AS tong_ps
+                FROM records
+                WHERE so = ?
+            """, (so,))
+        else:
+            c.execute("""
+                SELECT 
+                    '01' AS thang, SUM(tong_an) AS tong_ps
+                FROM records
+            """)
 
     rows = c.fetchall()
     conn.close()
@@ -71,17 +98,34 @@ def thong_ke_theo_thang(nam=None):
     return result
 
 
-def top_nguoi_diem_cao(limit=3):
+def top_nguoi_diem_cao(limit=3, so=None):
     conn = get_db()
     c = conn.cursor()
 
-    c.execute("""
-        SELECT name, SUM(diem) AS tong_diem
-        FROM records
-        GROUP BY name
-        ORDER BY tong_diem DESC
-        LIMIT ?
-    """, (limit,))
+    # Kiểm tra có cột so không
+    try:
+        c.execute("SELECT so FROM records LIMIT 1")
+        has_so = True
+    except:
+        has_so = False
+
+    if has_so and so in ("TRU", "LS"):
+        c.execute("""
+            SELECT name, SUM(diem) AS tong_diem
+            FROM records
+            WHERE so = ?
+            GROUP BY name
+            ORDER BY tong_diem DESC
+            LIMIT ?
+        """, (so, limit))
+    else:
+        c.execute("""
+            SELECT name, SUM(diem) AS tong_diem
+            FROM records
+            GROUP BY name
+            ORDER BY tong_diem DESC
+            LIMIT ?
+        """, (limit,))
 
     rows = c.fetchall()
     conn.close()

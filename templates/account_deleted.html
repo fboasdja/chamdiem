@@ -2,12 +2,35 @@
 <html lang="vi">
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Tài khoản không tồn tại</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/style.css">
 </head>
-<body>
+<body class="auth-body">
+    <div class="auth-wrapper">
+        <div class="auth-card">
+            <h1>Phiên đăng nhập không hợp lệ</h1>
+            <p class="muted">{{ message or 'Tài khoản không tồn tại hoặc đã bị xoá' }}</p>
+            <button class="btn-primary" onclick="goLogin()">Về trang đăng nhập</button>
+            <p class="muted" style="margin-top:14px;font-size:12px;">Tự chuyển về login sau <strong id="sec">3</strong>s</p>
+        </div>
+    </div>
+
 <script>
-    alert("{{ message or 'Tài khoản không tồn tại hoặc đã bị xoá' }}");
-    window.location.href = "/";
+function goLogin(){
+  window.location.href = "/";
+}
+let s = 3;
+const el = document.getElementById("sec");
+const t = setInterval(() => {
+  s -= 1;
+  if (el) el.textContent = String(s);
+  if (s <= 0) {
+    clearInterval(t);
+    goLogin();
+  }
+}, 1000);
 </script>
 </body>
 </html>

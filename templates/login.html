@@ -1,7 +1,8 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="vi" data-login-success="{{ 1 if login_success else 0 }}" data-login-error="{{ 1 if login_error else 0 }}">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Login</title>
 
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -14,13 +15,38 @@
 <div id="page-overlay"></div>
 
 <div class="auth-wrapper">
-    <div class="auth-card">
-        <h1>Đăng nhập</h1>
-        <p>Hệ thống quản lý xử án</p>
+    <div class="auth-card {% if login_error %}shake{% endif %}">
+        <div class="auth-brand">
+            <div class="auth-logo" aria-hidden="true">PB</div>
+            <div>
+                <h1>Đăng nhập</h1>
+                <p>Hệ thống quản lý xử án & điểm</p>
+            </div>
+        </div>
 
-        <form method="post" id="loginForm" onsubmit="startTransition()">
+        {% if login_success %}
+        <div class="auth-status success">
+            <div class="status-icon" aria-hidden="true">✓</div>
+            <div class="status-text">
+                <div class="status-title">Đăng nhập thành công</div>
+                <div class="status-sub">Đang chuyển vào Dashboard…</div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if login_error %}
+        <div class="auth-status error">
+            <div class="status-icon" aria-hidden="true">!</div>
+            <div class="status-text">
+                <div class="status-title">Đăng nhập thất bại</div>
+                <div class="status-sub">{{ login_error }}</div>
+            </div>
+        </div>
+        {% endif %}
+
+        <form method="post" id="loginForm">
             <div class="input-group">
-                <input type="text" name="username" id="username" required autofocus>
+                <input type="text" name="username" id="username" required autofocus value="{{ last_username or '' }}">
                 <label>Tài khoản</label>
             </div>
 
@@ -34,8 +60,24 @@
 </div>
 
 <script>
-function startTransition(){
-    document.getElementById("page-overlay").classList.add("active")
+const overlay = document.getElementById("page-overlay");
+const root = document.documentElement;
+const loginSuccess = (root?.dataset?.loginSuccess === "1");
+const loginError = (root?.dataset?.loginError === "1");
+
+if (loginSuccess) {
+  if (overlay) overlay.classList.add("active");
+  setTimeout(() => {
+    window.location.href = "/dashboard";
+  }, 900);
+}
+
+// On error, focus lại ô password cho nhập nhanh
+if (loginError) {
+  setTimeout(() => {
+    const pw = document.getElementById("password");
+    if (pw) pw.focus();
+  }, 50);
 }
 </script>
 

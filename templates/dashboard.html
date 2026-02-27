@@ -2,6 +2,7 @@
 <html lang="vi">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dashboard</title>
 
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -22,6 +23,25 @@
         <a href="/logout" class="logout">Đăng xuất</a>
     </header>
 
+    <div class="dashboard-layout">
+        <!-- ===== Sidebar Sở ===== -->
+        <aside class="side-so-tabs">
+            {% if user_role == 'admin' or so_allowed in ['TRU', 'ALL'] %}
+            <button class="side-so-btn {% if current_so == 'TRU' %}active{% endif %}" onclick="window.location='{{ url_for('dashboard') }}?so=TRU'">
+                Sở TRU
+            </button>
+            {% endif %}
+            {% if user_role == 'admin' or so_allowed in ['LS', 'ALL'] %}
+            <button class="side-so-btn {% if current_so == 'LS' %}active{% endif %}" onclick="window.location='{{ url_for('dashboard') }}?so=LS'">
+                Sở LS
+            </button>
+            {% endif %}
+            {% if user_role == 'admin' %}
+            <button class="side-so-btn" onclick="openHealTab()">Heal</button>
+            {% endif %}
+        </aside>
+
+        <div class="dashboard-main">
     <!-- ===== Tabs ===== -->
     <div class="tabs">
         {% if can_see_main %}
@@ -60,22 +80,22 @@
                         <input name="name" placeholder="Tên" required>
                     </div>
                     
-                    <div class="form-group">
+                    <div class="form-group" id="giao_thong_group">
                         <label>Giao thông</label>
                         <input type="number" name="giao_thong" id="giao_thong_input" placeholder="0" value="0">
                     </div>
                     
                     <div class="form-group">
-                        <label>1–5</label>
+                        <label>Án hình sự khoản 1-5</label>
                         <input type="number" name="xa_1_4" placeholder="0" value="0">
                     </div>
                     
                     <div class="form-group">
-                        <label>6</label>
+                        <label>Án hình sự khoản 6</label>
                         <input type="number" name="xa_5_6" placeholder="0" value="0">
                     </div>
                     
-                    <div class="form-group">
+                    <div class="form-group" id="giam_sat_group">
                         <label>Giám sát</label>
                         <input type="number" name="giam_sat" id="giam_sat_input" placeholder="0" value="0">
                     </div>
@@ -105,9 +125,9 @@
                         <th>Chức vụ</th>
                         <th>Tên</th>
                         <th>Giao thông</th>
-                        <th>1–5</th>
-                        <th>6</th>
-                        <th>GS</th>
+                        <th>Án hình sự khoản 1-5</th>
+                        <th>Án hình sự khoản 6</th>
+                        <th>Giám sát</th>
                         <th>Án sai</th>
                         <th>Tổng</th>
                         <th>Điểm</th>
@@ -127,9 +147,9 @@
                             </select>
                         </td>
                         <td contenteditable onblur="edit({{r.id}},'name',this)">{{r.name}}</td>
-                        <td class="giao-thong-cell" data-chuc-vu="{{r.chuc_vu}}" data-id="{{r.id}}"
-                            {% if r.chuc_vu == 'Thực tập' %}contenteditable onblur="edit({{r.id}},'giao_thong',this)"{% else %}contenteditable="false" style="opacity:0.6;cursor:not-allowed"{% endif %}
-                            >{% if r.chuc_vu == 'Thực tập' %}{{r.giao_thong or 0}}{% else %}X{% endif %}</td>
+                        <td class="giao-thong-cell" data-chuc_vu="{{r.chuc_vu}}" data-id="{{r.id}}"
+                            contenteditable onblur="edit({{r.id}},'giao_thong',this)"
+                            >{{r.giao_thong or 0}}</td>
                         <td contenteditable onblur="edit({{r.id}},'xa_1_4',this)">{{r.xa_1_4}}</td>
                         <td contenteditable onblur="edit({{r.id}},'xa_5_6',this)">{{r.xa_5_6}}</td>
                         <td class="giam-sat-cell" data-chuc-vu="{{r.chuc_vu}}" data-id="{{r.id}}"
@@ -139,7 +159,7 @@
                         {% else %}
                         <td>{{r.chuc_vu}}</td>
                         <td>{{r.name}}</td>
-                        <td>{% if r.chuc_vu == 'Thực tập' %}{{r.giao_thong or 0}}{% else %}X{% endif %}</td>
+                        <td>{{r.giao_thong or 0}}</td>
                         <td>{{r.xa_1_4}}</td>
                         <td>{{r.xa_5_6}}</td>
                         <td>{% if r.chuc_vu == 'Thực tập' %}X{% else %}{{r.giam_sat}}{% endif %}</td>
@@ -161,57 +181,136 @@
     </div>
     {% endif %}
 
+    <!-- ===== Tab Heal ===== -->
+    <div id="tab-heal" class="tab-content">
+        <section class="card">
+            <h2>Heal</h2>
+            <p class="muted">Giữ tab này mở để ping duy trì web.</p>
+            <div class="heal-box">
+                <div class="heal-row">
+                    <span class="muted">URL</span>
+                    <input id="heal-url" placeholder="Để trống = /health" value="">
+                </div>
+                <div class="heal-row">
+                    <span class="muted">Trạng thái</span>
+                    <span id="heal-status" class="strong">Chưa chạy</span>
+                </div>
+                <div class="heal-row">
+                    <button class="btn-toggle" onclick="startHeal()">Start</button>
+                    <button class="btn-toggle" onclick="stopHeal()">Stop</button>
+                </div>
+            </div>
+        </section>
+    </div>
+
     <!-- ===== Tab Điểm (user, editer, admin - chỉ xem) ===== -->
     {% if can_see_diem %}
     <div id="tab-diem" class="tab-content {% if not can_see_main %}active{% endif %}">
         <section class="card diem-page">
-            <h2 class="diem-title">Bảng điểm</h2>
-            <p class="diem-subtitle">Xếp theo chức vụ rồi điểm</p>
-            <div class="diem-cards">
-                {% for r in data %}
-                <div class="diem-card">
-                    <div class="diem-card-header">
-                        <span class="diem-chuc-vu">{{r.chuc_vu}}</span>
-                        <span class="diem-ten">{{r.name}}</span>
-                    </div>
-                    <div class="diem-card-body">
-                        <div class="diem-row">
-                            <span class="diem-label">Giao thông</span>
-                            <span class="diem-val">{% if r.chuc_vu == 'Thực tập' %}{{r.giao_thong or 0}}{% else %}—{% endif %}</span>
-                        </div>
-                        <div class="diem-row">
-                            <span class="diem-label">1–5</span>
-                            <span class="diem-val">{{r.xa_1_4}}</span>
-                        </div>
-                        <div class="diem-row">
-                            <span class="diem-label">6</span>
-                            <span class="diem-val">{{r.xa_5_6}}</span>
-                        </div>
-                        <div class="diem-row">
-                            <span class="diem-label">Giám sát</span>
-                            <span class="diem-val">{% if r.chuc_vu == 'Thực tập' %}—{% else %}{{r.giam_sat}}{% endif %}</span>
-                        </div>
-                        <div class="diem-row">
-                            <span class="diem-label">Án sai</span>
-                            <span class="diem-val">{{r.an_sai}}</span>
-                        </div>
-                    </div>
-                    <div class="diem-card-footer">
-                        <div class="diem-footer-item">
-                            <span class="diem-footer-label">Tổng</span>
-                            <span class="diem-footer-val">{{r.tong_an}}</span>
-                        </div>
-                        <div class="diem-footer-item diem-highlight">
-                            <span class="diem-footer-label">Điểm</span>
-                            <span class="diem-footer-val diem-score">{{r.diem}}</span>
-                        </div>
-                    </div>
+            <div class="diem-header-row">
+                <div class="diem-header-left">
+                    <h3 class="diem-title">Điểm bảng</h3>
+                    <p class="diem-subtitle">Bảng tổng hợp theo hàng</p>
                 </div>
-                {% endfor %}
+                <div class="diem-view-tabs">
+                    <button class="diem-view-btn active" data-view="bang" onclick="switchDiemView('bang', this)">Điểm bảng</button>
+                    <button class="diem-view-btn" data-view="rieng" onclick="switchDiemView('rieng', this)">Điểm riêng</button>
+                </div>
             </div>
-            {% if not data %}
-            <p class="diem-empty">Chưa có dữ liệu</p>
-            {% endif %}
+
+            <!-- View: Điểm bảng (table) -->
+            <div id="diem-view-bang" class="diem-view active">
+                <div class="diem-main-title">
+                    <h2 id="monthly-title-text">{{ monthly_title }}</h2>
+                    {% if can_edit_title %}
+                    <button class="btn-toggle btn-title-edit" onclick="editMonthlyTitle()">Sửa tiêu đề</button>
+                    {% endif %}
+                </div>
+                <div class="diem-table-scroll">
+                    <table class="top-scores-table">
+                        <thead>
+                            <tr>
+                                <th>Chức vụ</th>
+                                <th>Tên</th>
+                                <th>Giao thông</th>
+                                <th>Án hình sự khoản 1-5</th>
+                                <th>Án hình sự khoản 6</th>
+                                <th>Giám sát</th>
+                                <th>Án sai</th>
+                                <th>Tổng</th>
+                                <th>Điểm</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for r in data %}
+                            <tr>
+                                <td>{{ r.chuc_vu }}</td>
+                                <td><strong>{{ r.name }}</strong></td>
+                                <td>{{ r.giao_thong or 0 }}</td>
+                                <td>{{ r.xa_1_4 }}</td>
+                                <td>{{ r.xa_5_6 }}</td>
+                                <td>{% if r.chuc_vu == 'Thực tập' %}X{% else %}{{ r.giam_sat }}{% endif %}</td>
+                                <td>{{ r.an_sai }}</td>
+                                <td class="muted">{{ r.tong_an }}</td>
+                                <td class="strong">{{ r.diem }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+                {% if not data %}
+                <p class="diem-empty">Chưa có dữ liệu</p>
+                {% endif %}
+            </div>
+
+            <!-- View: Điểm riêng (card như cũ) -->
+            <div id="diem-view-rieng" class="diem-view" style="display:none;">
+                <div class="diem-cards">
+                    {% for r in data %}
+                    <div class="diem-card">
+                        <div class="diem-card-header">
+                            <span class="diem-chuc-vu">{{r.chuc_vu}}</span>
+                            <span class="diem-ten">{{r.name}}</span>
+                        </div>
+                        <div class="diem-card-body">
+                            <div class="diem-row">
+                                <span class="diem-label">Giao thông</span>
+                                <span class="diem-val">{{r.giao_thong or 0}}</span>
+                            </div>
+                            <div class="diem-row">
+                                <span class="diem-label">Án hình sự khoản 1-5</span>
+                                <span class="diem-val">{{r.xa_1_4}}</span>
+                            </div>
+                            <div class="diem-row">
+                                <span class="diem-label">Án hình sự khoản 6</span>
+                                <span class="diem-val">{{r.xa_5_6}}</span>
+                            </div>
+                            <div class="diem-row">
+                                <span class="diem-label">Giám sát</span>
+                                <span class="diem-val">{% if r.chuc_vu == 'Thực tập' %}—{% else %}{{r.giam_sat}}{% endif %}</span>
+                            </div>
+                            <div class="diem-row">
+                                <span class="diem-label">Án sai</span>
+                                <span class="diem-val">{{r.an_sai}}</span>
+                            </div>
+                        </div>
+                        <div class="diem-card-footer">
+                            <div class="diem-footer-item">
+                                <span class="diem-footer-label">Tổng</span>
+                                <span class="diem-footer-val">{{r.tong_an}}</span>
+                            </div>
+                            <div class="diem-footer-item diem-highlight">
+                                <span class="diem-footer-label">Điểm riêng</span>
+                                <span class="diem-footer-val diem-score">{{r.diem}}</span>
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% if not data %}
+                <p class="diem-empty">Chưa có dữ liệu</p>
+                {% endif %}
+            </div>
         </section>
     </div>
     {% endif %}
@@ -249,6 +348,14 @@
                             </div>
                         </div>
                         <div class="form-row">
+                            <div class="input-group-full">
+                                <select id="new_so" required>
+                                    <option value="TRU">Sở TRU</option>
+                                    <option value="LS">Sở LS</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
                             <button type="submit" class="btn-create">Tạo tài khoản</button>
                         </div>
                         <div id="createAccountResult" class="result-message"></div>
@@ -265,11 +372,12 @@
                                     <th>Username</th>
                                     <th>Password</th>
                                     <th>Role</th>
+                                    <th>Sở</th>
                                     <th></th>
                                 </tr>
                             </thead>
                             <tbody id="users-body">
-                                <tr><td colspan="5" style="text-align:center;color:#9ca3af;">Đang tải...</td></tr>
+                                <tr><td colspan="6" style="text-align:center;color:#9ca3af;">Đang tải...</td></tr>
                             </tbody>
                         </table>
                     </div>
@@ -278,6 +386,9 @@
         </section>
     </div>
     {% endif %}
+
+        </div> <!-- dashboard-main -->
+    </div> <!-- dashboard-layout -->
 
     <!-- ===== Tab Thống kê ===== -->
     <div id="tab-thongke" class="tab-content {% if not can_see_main %}active{% endif %}">
@@ -372,27 +483,125 @@ function toggleRoleFields() {
     const chucVuSelect = document.getElementById('chuc_vu_select');
     const giamSatInput = document.getElementById('giam_sat_input');
     const giaoThongInput = document.getElementById('giao_thong_input');
+    const giaoThongGroup = document.getElementById('giao_thong_group');
+    const giamSatGroup = document.getElementById('giam_sat_group');
     
+    // Thực tập: có Giao thông, không có Giám sát
+    // Cảnh sát viên / Sĩ quan dự bị: có cả Giao thông + Giám sát
     if (chucVuSelect.value === 'Thực tập') {
+        // Hiện Giao thông, ẩn Giám sát
+        giaoThongGroup.style.display = 'block';
         giaoThongInput.disabled = false;
+        giaoThongInput.placeholder = '0';
         giaoThongInput.style.opacity = '1';
         giaoThongInput.style.cursor = 'text';
-        giamSatInput.disabled = true;
+        giamSatGroup.style.display = 'none';
         giamSatInput.value = 0;
-        giamSatInput.placeholder = 'X';
-        giamSatInput.style.opacity = '0.6';
-        giamSatInput.style.cursor = 'not-allowed';
     } else {
-        giaoThongInput.disabled = true;
-        giaoThongInput.value = 0;
-        giaoThongInput.placeholder = 'X';
-        giaoThongInput.style.opacity = '0.6';
-        giaoThongInput.style.cursor = 'not-allowed';
+        // Hiện cả Giao thông + Giám sát
+        giaoThongGroup.style.display = 'block';
+        giaoThongInput.disabled = false;
+        giaoThongInput.placeholder = '0';
+        giaoThongInput.style.opacity = '1';
+        giaoThongInput.style.cursor = 'text';
+        giamSatGroup.style.display = 'block';
         giamSatInput.disabled = false;
         giamSatInput.placeholder = '0';
         giamSatInput.style.opacity = '1';
         giamSatInput.style.cursor = 'text';
     }
+}
+
+// Đổi giữa view "Điểm bảng" và "Điểm riêng"
+function switchDiemView(view, btn) {
+    const bang = document.getElementById('diem-view-bang');
+    const rieng = document.getElementById('diem-view-rieng');
+    if (!bang || !rieng) return;
+
+    if (view === 'bang') {
+        bang.classList.add('active');
+        bang.style.display = 'block';
+        rieng.classList.remove('active');
+        rieng.style.display = 'none';
+    } else {
+        bang.classList.remove('active');
+        bang.style.display = 'none';
+        rieng.classList.add('active');
+        rieng.style.display = 'block';
+    }
+
+    // Cập nhật nút active
+    document.querySelectorAll('.diem-view-btn').forEach(b => b.classList.remove('active'));
+    if (btn) {
+        btn.classList.add('active');
+    }
+}
+
+// Admin chỉnh sửa tiêu đề "THỐNG KÊ ĐIỂM THÁNG"
+function editMonthlyTitle() {
+    const titleEl = document.getElementById('monthly-title-text');
+    if (!titleEl) return;
+    const current = titleEl.innerText.trim() || 'THỐNG KÊ ĐIỂM THÁNG';
+    const next = prompt('Nhập tiêu đề mới cho phần thống kê điểm tháng:', current);
+    if (!next || !next.trim()) return;
+
+    fetch('/api/settings/monthly_title', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({title: next.trim()})
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.success) {
+            titleEl.innerText = d.title;
+        } else if (d.error) {
+            alert(d.error);
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        alert('Lỗi khi cập nhật tiêu đề');
+    });
+}
+
+// ===== Sidebar Heal =====
+let _healTimer = null;
+
+function openHealTab() {
+    switchTab('heal');
+    // ping luôn 1 lần để thấy hoạt động
+    if (!_healTimer) {
+        startHeal();
+    }
+}
+
+function startHeal() {
+    stopHeal();
+    const urlInput = document.getElementById('heal-url');
+    const statusEl = document.getElementById('heal-status');
+    const target = (urlInput && urlInput.value && urlInput.value.trim()) ? urlInput.value.trim() : '/health';
+
+    const ping = async () => {
+        try {
+            const r = await fetch(target);
+            const text = await r.text();
+            if (statusEl) statusEl.innerText = `OK (${new Date().toLocaleTimeString()})`;
+        } catch (e) {
+            if (statusEl) statusEl.innerText = `Lỗi (${new Date().toLocaleTimeString()})`;
+        }
+    };
+
+    ping();
+    _healTimer = setInterval(ping, 30000);
+}
+
+function stopHeal() {
+    const statusEl = document.getElementById('heal-status');
+    if (_healTimer) {
+        clearInterval(_healTimer);
+        _healTimer = null;
+    }
+    if (statusEl) statusEl.innerText = 'Đã dừng';
 }
 
 // Edit chức vụ qua select (chỉ 3 lựa chọn)
@@ -412,6 +621,7 @@ function editChucVu(id, value) {
                 const gtCell = tr.querySelector(".giao-thong-cell");
                 const gsCell = tr.querySelector(".giam-sat-cell");
                 if (value === 'Thực tập') {
+                    // Thực tập: có Giao thông, không có Giám sát
                     gtCell.setAttribute('contenteditable', 'true');
                     gtCell.style.opacity = '1';
                     gtCell.style.cursor = 'text';
@@ -424,11 +634,13 @@ function editChucVu(id, value) {
                     gsCell.innerText = 'X';
                     gsCell.setAttribute('data-chuc-vu', 'Thực tập');
                 } else {
-                    gtCell.setAttribute('contenteditable', 'false');
-                    gtCell.style.opacity = '0.6';
-                    gtCell.style.cursor = 'not-allowed';
-                    gtCell.innerText = 'X';
+                    // Cảnh sát viên / Sĩ quan dự bị: có Giao thông và Giám sát
+                    gtCell.setAttribute('contenteditable', 'true');
+                    gtCell.style.opacity = '1';
+                    gtCell.style.cursor = 'text';
+                    gtCell.innerText = d.giao_thong ?? 0;
                     gtCell.setAttribute('data-chuc-vu', value);
+                    gtCell.onblur = () => edit(id, 'giao_thong', gtCell);
                     gsCell.setAttribute('contenteditable', 'true');
                     gsCell.style.opacity = '1';
                     gsCell.style.cursor = 'text';
@@ -523,7 +735,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Load statistics chart
 function loadStatistics() {
-    fetch('/api/thongke')
+    fetch(`/api/thongke?so={{ current_so }}`)
         .then(r => r.json())
         .then(data => {
             const labels = data.map(d => d.month);
@@ -597,7 +809,7 @@ function toggleChartType() {
 
 // Load top scores
 function loadTopScores() {
-    fetch('/api/top')
+    fetch(`/api/top?so={{ current_so }}`)
         .then(r => r.json())
         .then(data => {
             const tbody = document.getElementById('top-scores-body');
@@ -633,6 +845,7 @@ if(createAccountForm) {
         const username = document.getElementById('new_username').value.trim();
         const password = document.getElementById('new_password').value;
         const role = document.getElementById('new_role').value;
+        const so = (document.getElementById('new_so')?.value) || 'TRU';
         const resultDiv = document.getElementById('createAccountResult');
         
         if(!username || !password) {
@@ -644,7 +857,7 @@ if(createAccountForm) {
             const response = await fetch('/api/addaccount', {
                 method: 'POST',
                 headers: {'Content-Type': 'application/json'},
-                body: JSON.stringify({username, password, role})
+                body: JSON.stringify({username, password, role, so})
             });
 
             const contentType = response.headers.get('content-type') || '';
@@ -681,12 +894,12 @@ if(createAccountForm) {
 async function loadUsers() {
     const tbody = document.getElementById('users-body');
     if(!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#9ca3af;">Đang tải...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:#9ca3af;">Đang tải...</td></tr>';
     try{
         const r = await fetch('/api/users');
         const d = await r.json();
         if(!d.success){
-            tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#ef4444;">${d.error || 'Lỗi'}</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#ef4444;">${d.error || 'Lỗi'}</td></tr>`;
             return;
         }
         tbody.innerHTML = d.users.map(u => `
@@ -695,24 +908,39 @@ async function loadUsers() {
                 <td><strong>${u.username}</strong></td>
                 <td><span class="muted">${u.password || ''}</span></td>
                 <td>
-                    <select onchange="updateUserRole(${u.id}, this.value)" ${u.username==='admin' ? 'disabled' : ''}>
+                    <select onchange="updateUserRole(${u.id}, this.value)" ${u.role==='admin' ? 'disabled' : ''}>
                         <option value="admin" ${u.role==='admin' ? 'selected' : ''}>admin</option>
                         <option value="editer" ${u.role==='editer' ? 'selected' : ''}>editer</option>
                         <option value="user" ${u.role==='user' ? 'selected' : ''}>user</option>
                     </select>
                 </td>
                 <td>
-                    ${u.username==='admin' ? '' : `<button class="btn-toggle" onclick="deleteUser(${u.id})">Xóa</button>`}
+                    <select onchange="updateUserSo(${u.id}, this.value)" ${u.role==='admin' ? 'disabled' : ''}>
+                        <option value="TRU" ${(u.so||'TRU')==='TRU' ? 'selected' : ''}>TRU</option>
+                        <option value="LS" ${(u.so||'TRU')==='LS' ? 'selected' : ''}>LS</option>
+                    </select>
+                </td>
+                <td>
+                    ${u.role==='admin' ? '' : `<button class="btn-toggle" onclick="deleteUser(${u.id})">Xóa</button>`}
                 </td>
             </tr>
         `).join('');
     }catch(e){
-        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#ef4444;">${e.message}</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" style="text-align:center;color:#ef4444;">${e.message}</td></tr>`;
     }
 }
 
 async function updateUserRole(id, role){
     await fetch(`/api/users/${id}/role`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({role})});
+}
+
+async function updateUserSo(id, so){
+    const r = await fetch(`/api/users/${id}/so`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({so})});
+    const d = await r.json();
+    if(!d.success){
+        alert(d.error || 'Lỗi');
+        loadUsers();
+    }
 }
 
 async function deleteUser(id){

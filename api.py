@@ -1,4 +1,4 @@
-from flask import Blueprint, jsonify
+from flask import Blueprint, jsonify, session, request
 import sqlite3
 from datetime import datetime
 
@@ -16,12 +16,26 @@ def db():
 def thongke():
     from thongke import thong_ke_theo_thang
     year = datetime.now().year
-    data = thong_ke_theo_thang(year)
+    role = session.get("role", "user")
+    so_allowed = session.get("so_allowed", "TRU")
+    so = (request.args.get("so") or session.get("current_so") or "TRU").strip().upper()
+    if so not in ("TRU", "LS"):
+        so = "TRU"
+    if role != "admin" and so_allowed != "ALL":
+        so = (so_allowed or "TRU")
+    data = thong_ke_theo_thang(year, so=so)
     return jsonify(data)
 
 
 @api.route('/api/top')
 def top():
     from thongke import top_nguoi_diem_cao
-    data = top_nguoi_diem_cao(3)
+    role = session.get("role", "user")
+    so_allowed = session.get("so_allowed", "TRU")
+    so = (request.args.get("so") or session.get("current_so") or "TRU").strip().upper()
+    if so not in ("TRU", "LS"):
+        so = "TRU"
+    if role != "admin" and so_allowed != "ALL":
+        so = (so_allowed or "TRU")
+    data = top_nguoi_diem_cao(3, so=so)
     return jsonify(data)
