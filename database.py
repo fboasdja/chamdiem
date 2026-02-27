@@ -18,6 +18,8 @@ def get_db():
     if DATABASE_URL:
         import psycopg2
         import psycopg2.extras
+        import socket
+        from urllib.parse import urlparse, parse_qs
 
         class _AdaptRealDictCursor(psycopg2.extras.RealDictCursor):
             def execute(self, query, vars=None):
@@ -30,7 +32,31 @@ def get_db():
                     query = query.replace("?", "%s")
                 return super().executemany(query, vars_list)
 
-        return psycopg2.connect(DATABASE_URL, cursor_factory=_AdaptRealDictCursor)
+        # Render đôi khi không có route IPv6 -> Supabase resolve ra IPv6 sẽ lỗi "Network is unreachable".
+        # Ep ưu tiên IPv4 bằng hostaddr nếu resolve được A record.
+        hostaddr = None
+        sslmode = None
+        try:
+            u = urlparse(DATABASE_URL)
+            if u.hostname:
+                port = u.port or 5432
+                infos = socket.getaddrinfo(u.hostname, port, socket.AF_INET, socket.SOCK_STREAM)
+                if infos:
+                    hostaddr = infos[0][4][0]
+            qs = parse_qs(u.query or "")
+            if "sslmode" not in qs:
+                sslmode = "require"
+        except Exception:
+            # fallback: dùng default behavior
+            hostaddr = None
+            sslmode = None
+
+        kwargs = {"cursor_factory": _AdaptRealDictCursor, "connect_timeout": 10}
+        if hostaddr:
+            kwargs["hostaddr"] = hostaddr
+        if sslmode:
+            kwargs["sslmode"] = sslmode
+        return psycopg2.connect(DATABASE_URL, **kwargs)
 
     conn = sqlite3.connect("database.db", timeout=15, check_same_thread=False)
     conn.row_factory = sqlite3.Row
