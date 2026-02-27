@@ -21,12 +21,10 @@ import asyncio
 
 # Đọc token từ file
 def get_token():
-    try:
-        with open('token.txt', 'r', encoding='utf-8') as f:
-            return f.read().strip()
-    except FileNotFoundError:
-        print("Không tìm thấy file token.txt")
-        return None
+    # 1️⃣ Ưu tiên biến môi trường (Render)
+    token = os.environ.get("TOKEN")
+    if token:
+        return token.strip()
 
 # Đọc danh sách admin IDs từ file
 def get_admin_ids():
