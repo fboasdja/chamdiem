@@ -554,7 +554,7 @@ function editMonthlyTitle() {
     fetch('/api/settings/monthly_title', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({title: next.trim()})
+        body: JSON.stringify({title: next.trim(), so: '{{ current_so }}'})
     })
     .then(r => r.json())
     .then(d => {

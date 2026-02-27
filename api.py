@@ -1,15 +1,8 @@
 from flask import Blueprint, jsonify, session, request
-import sqlite3
 from datetime import datetime
 
 api = Blueprint('api', __name__)
-DB = 'database.db'
-
-
-def db():
-    conn = sqlite3.connect(DB, timeout=15, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
+from database import get_db
 
 
 @api.route('/api/thongke')

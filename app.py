@@ -1,5 +1,5 @@
 from flask import Flask, render_template, request, redirect, session, jsonify
-import sqlite3, datetime, time, os
+import datetime, time, os, sqlite3
 from thongke import thong_ke_theo_thang, top_nguoi_diem_cao
 from api import api
 from nhatky import lay_nhat_ky
@@ -7,11 +7,9 @@ from nhatky import lay_nhat_ky
 
 app = Flask(__name__)
 app.secret_key = "secret_xulyan"
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DB_DIR = os.path.join(BASE_DIR, "database")
-DB_NAME = os.path.join(BASE_DIR, "database.db")
-DB_TRU = os.path.join(DB_DIR, "databaseTRU.db")
-DB_LS = os.path.join(DB_DIR, "databaseLS.db")
+
+# DB: Render dùng Postgres (DATABASE_URL), local dùng SQLite
+from database import get_db, init_db as init_db_shared, is_postgres
 
 # Thời gian timeout session (giây) - 1 tiếng
 SESSION_TIMEOUT = 60 * 60
@@ -22,170 +20,9 @@ def health():
     return jsonify(ok=True)
 
 # ================= DB =================
-def get_db():
-    conn = sqlite3.connect(
-        DB_NAME,
-        timeout=15,
-        check_same_thread=False
-    )
-    conn.row_factory = sqlite3.Row
-    return conn
-
 def init_db():
-    # Tạo thư mục database và 2 file riêng cho TRU / LS (dùng cho tương lai / backup)
-    try:
-        os.makedirs(DB_DIR, exist_ok=True)
-        for path in (DB_TRU, DB_LS):
-            if not os.path.exists(path):
-                tmp_conn = sqlite3.connect(path)
-                tmp_conn.close()
-    except Exception:
-        # Không để lỗi phần này ảnh hưởng DB chính
-        pass
+    init_db_shared()
 
-    conn = get_db()
-    c = conn.cursor()
-
-    # WAL MODE chống lock
-    c.execute("PRAGMA journal_mode=WAL;")
-    c.execute("PRAGMA synchronous=NORMAL;")
-
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS users(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        username TEXT UNIQUE,
-        password TEXT,
-        role TEXT DEFAULT 'user',
-        so_allowed TEXT DEFAULT 'TRU'
-    )
-    """)
-    
-    # Thêm cột role nếu chưa có
-    try:
-        c.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'")
-    except:
-        pass
-
-    # Thêm cột so_allowed nếu chưa có (TRU/LS/ALL)
-    try:
-        c.execute("ALTER TABLE users ADD COLUMN so_allowed TEXT DEFAULT 'TRU'")
-    except:
-        pass
-
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS records(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        so TEXT DEFAULT 'TRU',
-        chuc_vu TEXT,
-        name TEXT,
-        giao_thong INTEGER,
-        xa_1_4 INTEGER,
-        xa_5_6 INTEGER,
-        giam_sat INTEGER,
-        an_sai INTEGER,
-        tong_an INTEGER,
-        diem INTEGER,
-        created_at TEXT DEFAULT (datetime('now')),
-        user_id TEXT
-    )
-    """)
-    
-    # Thêm cột created_at nếu chưa có
-    try:
-        c.execute("ALTER TABLE records ADD COLUMN created_at TEXT DEFAULT (datetime('now'))")
-    except:
-        pass
-    
-    # Thêm cột user_id nếu chưa có
-    try:
-        c.execute("ALTER TABLE records ADD COLUMN user_id TEXT")
-    except:
-        pass
-
-    # Thêm cột giao_thong nếu chưa có
-    try:
-        c.execute("ALTER TABLE records ADD COLUMN giao_thong INTEGER DEFAULT 0")
-    except:
-        pass
-
-    # Thêm cột so nếu chưa có (tách dữ liệu TRU/LS)
-    try:
-        c.execute("ALTER TABLE records ADD COLUMN so TEXT DEFAULT 'TRU'")
-    except:
-        pass
-
-    # Backfill so cho dữ liệu cũ (mặc định TRU)
-    try:
-        c.execute("UPDATE records SET so='TRU' WHERE so IS NULL OR TRIM(so) = ''")
-    except:
-        pass
-
-    # Cập nhật công thức: Tổng = 1-5 + 6; Điểm = giao_thong + 1-5 + 6*2 + GS - án sai*5
-    try:
-        c.execute("""
-            UPDATE records SET
-                tong_an = COALESCE(xa_1_4,0) + COALESCE(xa_5_6,0),
-                diem = COALESCE(giao_thong,0)*1
-                     + COALESCE(xa_1_4,0)*2
-                     + COALESCE(xa_5_6,0)*4
-                     + COALESCE(giam_sat,0)*1
-                     - COALESCE(an_sai,0)*5
-        """)
-    except:
-        pass
-
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS logs(
-        id INTEGER PRIMARY KEY AUTOINCREMENT,
-        action TEXT,
-        record_id INTEGER,
-        user_name TEXT,
-        time TEXT,
-        details TEXT
-    )
-    """)
-    
-    # Thêm cột user_name và details nếu chưa có
-    try:
-        c.execute("ALTER TABLE logs ADD COLUMN user_name TEXT")
-    except:
-        pass
-    try:
-        c.execute("ALTER TABLE logs ADD COLUMN details TEXT")
-    except:
-        pass
-    
-    # NOTE: bảng login_codes (nếu đã tồn tại từ bản cũ) sẽ giữ nguyên để không phá DB,
-    # nhưng hệ thống không còn dùng login bằng code nữa.
-
-    # Settings đơn giản (dùng cho tiêu đề thống kê tháng, ...)
-    c.execute("""
-    CREATE TABLE IF NOT EXISTS settings(
-        key TEXT PRIMARY KEY,
-        value TEXT
-    )
-    """)
-    c.execute(
-        "INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)",
-        ("monthly_title", "THỐNG KÊ ĐIỂM THÁNG")
-    )
-
-    # Đảm bảo account admin có role admin
-    c.execute(
-        "INSERT OR IGNORE INTO users(username,password,role,so_allowed) VALUES('admin','admin','admin','ALL')"
-    )
-    # Cập nhật lại role cho admin nếu đã tồn tại
-    c.execute(
-        "UPDATE users SET role='admin' WHERE username='admin'"
-    )
-    # Admin luôn ALL sở
-    try:
-        c.execute("UPDATE users SET so_allowed='ALL' WHERE username='admin'")
-    except:
-        pass
-
-    conn.commit()
-    conn.close()
 
 init_db()
 
@@ -662,14 +499,25 @@ def dashboard():
         # Điểm = Giao thông*1 + 1-5*2 + 6*4 + Giám sát*1 - Án sai*5
         diem = giao_thong*1 + xa_1_4*2 + xa_5_6*4 + giam_sat*1 - an_sai*5
 
-        c.execute("""
-        INSERT INTO records
-        (so,chuc_vu,name,giao_thong,xa_1_4,xa_5_6,giam_sat,an_sai,tong_an,diem,created_at,user_id)
-        VALUES(?,?,?,?,?,?,?,?,?,?,datetime('now'),?)
-        """,(current_so,chuc_vu,name,giao_thong,xa_1_4,xa_5_6,giam_sat,an_sai,tong_an,diem,user_id))
+        if is_postgres():
+            c.execute("""
+            INSERT INTO records
+            (so,chuc_vu,name,giao_thong,xa_1_4,xa_5_6,giam_sat,an_sai,tong_an,diem,user_id)
+            VALUES(?,?,?,?,?,?,?,?,?,?,?)
+            RETURNING id
+            """,(current_so,chuc_vu,name,giao_thong,xa_1_4,xa_5_6,giam_sat,an_sai,tong_an,diem,user_id))
+            new_id_row = c.fetchone()
+            new_id = (new_id_row.get("id") if isinstance(new_id_row, dict) else new_id_row[0]) if new_id_row else None
+        else:
+            c.execute("""
+            INSERT INTO records
+            (so,chuc_vu,name,giao_thong,xa_1_4,xa_5_6,giam_sat,an_sai,tong_an,diem,created_at,user_id)
+            VALUES(?,?,?,?,?,?,?,?,?,?,datetime('now'),?)
+            """,(current_so,chuc_vu,name,giao_thong,xa_1_4,xa_5_6,giam_sat,an_sai,tong_an,diem,user_id))
+            new_id = c.lastrowid
 
         user_name = session.get("username", "Unknown")
-        write_log(c, "ADD", c.lastrowid, user_name, f"Thêm record: {name}")
+        write_log(c, "ADD", new_id, user_name, f"Thêm record: {name}")
         conn.commit()
 
     can_see_main = can_view_main(session)
@@ -711,7 +559,10 @@ def dashboard():
         nhat_ky=nhat_ky,
         current_so=current_so,
         so_allowed=so_allowed,
-        monthly_title=get_setting("monthly_title", "THỐNG KÊ ĐIỂM THÁNG"),
+        monthly_title=get_setting(
+            f"monthly_title_{current_so}",
+            get_setting("monthly_title", "THỐNG KÊ ĐIỂM THÁNG"),
+        ),
         can_edit_title=(user_role == "admin"),
         stats_title=get_setting(f"stats_title_{current_so}", f"Thống kê điểm Sở {current_so}"),
         stats_label=get_setting(f"stats_label_{current_so}", "Tổng số PS"),
@@ -862,14 +713,18 @@ def api_set_monthly_title():
         return jsonify(success=False, error="Không có quyền (chỉ admin)"), 403
     data = request.json or {}
     title = (data.get("title") or "").strip()
+    so = _normalize_so(data.get("so") or session.get("current_so") or "TRU")
     if not title:
         return jsonify(success=False, error="Tiêu đề không được để trống"), 400
     conn = get_db()
     c = conn.cursor()
-    c.execute("INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value", ("monthly_title", title))
+    c.execute(
+        "INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (f"monthly_title_{so}", title),
+    )
     conn.commit()
     conn.close()
-    return jsonify(success=True, title=title)
+    return jsonify(success=True, title=title, so=so)
 
 
 @app.post("/api/settings/stats")

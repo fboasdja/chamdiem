@@ -1,15 +1,6 @@
 # thongke.py
-import sqlite3
 from datetime import datetime
-
-DB_NAME = "database.db"
-
-
-def get_db():
-    # timeout + check_same_thread để tránh database is locked
-    conn = sqlite3.connect(DB_NAME, timeout=15, check_same_thread=False)
-    conn.row_factory = sqlite3.Row
-    return conn
+from database import get_db, is_postgres
 
 
 def thong_ke_theo_thang(nam=None, so=None):
@@ -19,24 +10,39 @@ def thong_ke_theo_thang(nam=None, so=None):
     conn = get_db()
     c = conn.cursor()
 
-    # Kiểm tra xem có cột created_at không
-    try:
-        c.execute("SELECT created_at FROM records LIMIT 1")
-        has_created_at = True
-    except:
-        has_created_at = False
-
-    # Kiểm tra có cột so không
-    try:
-        c.execute("SELECT so FROM records LIMIT 1")
-        has_so = True
-    except:
-        has_so = False
-
-    if has_created_at:
-        if has_so and so in ("TRU", "LS"):
-            c.execute("""
-                SELECT 
+    if is_postgres():
+        if so in ("TRU", "LS"):
+            c.execute(
+                """
+                SELECT
+                    LPAD(EXTRACT(MONTH FROM created_at)::text, 2, '0') AS thang,
+                    SUM(tong_an) AS tong_ps
+                FROM records
+                WHERE EXTRACT(YEAR FROM created_at) = ?
+                  AND so = ?
+                GROUP BY thang
+                ORDER BY thang
+                """,
+                (int(nam), so),
+            )
+        else:
+            c.execute(
+                """
+                SELECT
+                    LPAD(EXTRACT(MONTH FROM created_at)::text, 2, '0') AS thang,
+                    SUM(tong_an) AS tong_ps
+                FROM records
+                WHERE EXTRACT(YEAR FROM created_at) = ?
+                GROUP BY thang
+                ORDER BY thang
+                """,
+                (int(nam),),
+            )
+    else:
+        if so in ("TRU", "LS"):
+            c.execute(
+                """
+                SELECT
                     strftime('%m', created_at) AS thang,
                     SUM(tong_an) AS tong_ps
                 FROM records
@@ -44,32 +50,22 @@ def thong_ke_theo_thang(nam=None, so=None):
                   AND so = ?
                 GROUP BY thang
                 ORDER BY thang
-            """, (str(nam), so))
+                """,
+                (str(nam), so),
+            )
         else:
-            c.execute("""
-                SELECT 
+            c.execute(
+                """
+                SELECT
                     strftime('%m', created_at) AS thang,
                     SUM(tong_an) AS tong_ps
                 FROM records
                 WHERE strftime('%Y', created_at) = ?
                 GROUP BY thang
                 ORDER BY thang
-            """, (str(nam),))
-    else:
-        # Nếu không có created_at, trả về tổng PS cho tất cả records
-        if has_so and so in ("TRU", "LS"):
-            c.execute("""
-                SELECT 
-                    '01' AS thang, SUM(tong_an) AS tong_ps
-                FROM records
-                WHERE so = ?
-            """, (so,))
-        else:
-            c.execute("""
-                SELECT 
-                    '01' AS thang, SUM(tong_an) AS tong_ps
-                FROM records
-            """)
+                """,
+                (str(nam),),
+            )
 
     rows = c.fetchall()
     conn.close()
@@ -102,30 +98,29 @@ def top_nguoi_diem_cao(limit=3, so=None):
     conn = get_db()
     c = conn.cursor()
 
-    # Kiểm tra có cột so không
-    try:
-        c.execute("SELECT so FROM records LIMIT 1")
-        has_so = True
-    except:
-        has_so = False
-
-    if has_so and so in ("TRU", "LS"):
-        c.execute("""
+    if so in ("TRU", "LS"):
+        c.execute(
+            """
             SELECT name, SUM(diem) AS tong_diem
             FROM records
             WHERE so = ?
             GROUP BY name
             ORDER BY tong_diem DESC
             LIMIT ?
-        """, (so, limit))
+            """,
+            (so, limit),
+        )
     else:
-        c.execute("""
+        c.execute(
+            """
             SELECT name, SUM(diem) AS tong_diem
             FROM records
             GROUP BY name
             ORDER BY tong_diem DESC
             LIMIT ?
-        """, (limit,))
+            """,
+            (limit,),
+        )
 
     rows = c.fetchall()
     conn.close()

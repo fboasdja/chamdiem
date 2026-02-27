@@ -1,0 +1,246 @@
+import os
+import sqlite3
+from typing import Any, Optional, Sequence
+
+
+DATABASE_URL = os.environ.get("DATABASE_URL")
+
+
+def is_postgres() -> bool:
+    return bool(DATABASE_URL)
+
+
+def get_db():
+    """
+    - Render/Prod: dùng Postgres từ env DATABASE_URL (psycopg2)
+    - Local: fallback SQLite database.db
+    """
+    if DATABASE_URL:
+        import psycopg2
+        import psycopg2.extras
+
+        class _AdaptRealDictCursor(psycopg2.extras.RealDictCursor):
+            def execute(self, query, vars=None):
+                if isinstance(query, str) and "?" in query:
+                    query = query.replace("?", "%s")
+                return super().execute(query, vars)
+
+            def executemany(self, query, vars_list):
+                if isinstance(query, str) and "?" in query:
+                    query = query.replace("?", "%s")
+                return super().executemany(query, vars_list)
+
+        return psycopg2.connect(DATABASE_URL, cursor_factory=_AdaptRealDictCursor)
+
+    conn = sqlite3.connect("database.db", timeout=15, check_same_thread=False)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def adapt_sql(sql: str) -> str:
+    """
+    Convert sqlite-style placeholders (?) to psycopg2 style (%s) when using Postgres.
+    Assumption: queries in this project don't contain literal '?'.
+    """
+    if DATABASE_URL:
+        return sql.replace("?", "%s")
+    return sql
+
+
+def execute(cur, sql: str, params: Optional[Sequence[Any]] = None):
+    if params is None:
+        params = ()
+    cur.execute(adapt_sql(sql), params)
+    return cur
+
+
+def init_db():
+    """
+    Tạo schema tương thích cả SQLite và Postgres.
+    """
+    # SQLite mode: tạo folder database/ + 2 file TRU/LS (phục vụ backup / tách sau này)
+    if not DATABASE_URL:
+        try:
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            db_dir = os.path.join(base_dir, "database")
+            os.makedirs(db_dir, exist_ok=True)
+            for name in ("databaseTRU.db", "databaseLS.db"):
+                path = os.path.join(db_dir, name)
+                if not os.path.exists(path):
+                    tmp = sqlite3.connect(path)
+                    tmp.close()
+        except Exception:
+            pass
+
+    conn = get_db()
+    cur = conn.cursor()
+
+    if DATABASE_URL:
+        execute(
+            cur,
+            """
+            CREATE TABLE IF NOT EXISTS users(
+                id SERIAL PRIMARY KEY,
+                username TEXT UNIQUE,
+                password TEXT,
+                role TEXT DEFAULT 'user',
+                so_allowed TEXT DEFAULT 'TRU'
+            );
+            """,
+        )
+        execute(
+            cur,
+            """
+            CREATE TABLE IF NOT EXISTS records(
+                id SERIAL PRIMARY KEY,
+                so TEXT DEFAULT 'TRU',
+                chuc_vu TEXT,
+                name TEXT,
+                giao_thong INTEGER DEFAULT 0,
+                xa_1_4 INTEGER DEFAULT 0,
+                xa_5_6 INTEGER DEFAULT 0,
+                giam_sat INTEGER DEFAULT 0,
+                an_sai INTEGER DEFAULT 0,
+                tong_an INTEGER DEFAULT 0,
+                diem INTEGER DEFAULT 0,
+                created_at TIMESTAMP DEFAULT NOW(),
+                user_id TEXT
+            );
+            """,
+        )
+        execute(
+            cur,
+            """
+            CREATE TABLE IF NOT EXISTS logs(
+                id SERIAL PRIMARY KEY,
+                action TEXT,
+                record_id INTEGER,
+                user_name TEXT,
+                time TEXT,
+                details TEXT
+            );
+            """,
+        )
+        execute(
+            cur,
+            """
+            CREATE TABLE IF NOT EXISTS settings(
+                key TEXT PRIMARY KEY,
+                value TEXT
+            );
+            """,
+        )
+        execute(
+            cur,
+            """
+            INSERT INTO settings(key,value) VALUES('monthly_title','THỐNG KÊ ĐIỂM THÁNG')
+            ON CONFLICT(key) DO NOTHING;
+            """,
+        )
+        execute(
+            cur,
+            """
+            INSERT INTO settings(key,value) VALUES('monthly_title_TRU','THỐNG KÊ ĐIỂM THÁNG')
+            ON CONFLICT(key) DO NOTHING;
+            """,
+        )
+        execute(
+            cur,
+            """
+            INSERT INTO settings(key,value) VALUES('monthly_title_LS','THỐNG KÊ ĐIỂM THÁNG')
+            ON CONFLICT(key) DO NOTHING;
+            """,
+        )
+        execute(
+            cur,
+            """
+            INSERT INTO users(username,password,role,so_allowed)
+            VALUES('admin','admin','admin','ALL')
+            ON CONFLICT(username) DO NOTHING;
+            """,
+        )
+        execute(cur, "UPDATE users SET role='admin', so_allowed='ALL' WHERE username='admin';")
+        conn.commit()
+        conn.close()
+        return
+
+    # SQLite
+    execute(cur, "PRAGMA journal_mode=WAL;")
+    execute(cur, "PRAGMA synchronous=NORMAL;")
+    execute(
+        cur,
+        """
+        CREATE TABLE IF NOT EXISTS users(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE,
+            password TEXT,
+            role TEXT DEFAULT 'user',
+            so_allowed TEXT DEFAULT 'TRU'
+        )
+        """,
+    )
+    execute(
+        cur,
+        """
+        CREATE TABLE IF NOT EXISTS records(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            so TEXT DEFAULT 'TRU',
+            chuc_vu TEXT,
+            name TEXT,
+            giao_thong INTEGER,
+            xa_1_4 INTEGER,
+            xa_5_6 INTEGER,
+            giam_sat INTEGER,
+            an_sai INTEGER,
+            tong_an INTEGER,
+            diem INTEGER,
+            created_at TEXT DEFAULT (datetime('now')),
+            user_id TEXT
+        )
+        """,
+    )
+    execute(
+        cur,
+        """
+        CREATE TABLE IF NOT EXISTS logs(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            action TEXT,
+            record_id INTEGER,
+            user_name TEXT,
+            time TEXT,
+            details TEXT
+        )
+        """,
+    )
+    execute(
+        cur,
+        """
+        CREATE TABLE IF NOT EXISTS settings(
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+        """,
+    )
+    execute(
+        cur,
+        "INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)",
+        ("monthly_title", "THỐNG KÊ ĐIỂM THÁNG"),
+    )
+    execute(
+        cur,
+        "INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)",
+        ("monthly_title_TRU", "THỐNG KÊ ĐIỂM THÁNG"),
+    )
+    execute(
+        cur,
+        "INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)",
+        ("monthly_title_LS", "THỐNG KÊ ĐIỂM THÁNG"),
+    )
+    execute(
+        cur,
+        "INSERT OR IGNORE INTO users(username,password,role,so_allowed) VALUES('admin','admin','admin','ALL')",
+    )
+    execute(cur, "UPDATE users SET role='admin', so_allowed='ALL' WHERE username='admin'")
+    conn.commit()
+    conn.close()
+
