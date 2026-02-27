@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 ab5==0.7
 aenum==2.2.6
 aiofiles==24.1.0
@@ -170,4 +170,3 @@ Flask==3.0.0
 discord.py==2.3.2
 aiohttp==3.9.1
 gunicorn
->>>>>>> 3b28c2744ae9f06cb07a83c5e96e3eeb0786f48c
