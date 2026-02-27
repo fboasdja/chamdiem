@@ -1,0 +1,732 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Dashboard</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+</head>
+
+<body>
+
+<div class="page-enter app">
+
+    <!-- ===== Header ===== -->
+    <header class="header">
+        <div>
+            <h1>Dashboard</h1>
+            <span>Quản lý xử án & điểm</span>
+        </div>
+        <a href="/logout" class="logout">Đăng xuất</a>
+    </header>
+
+    <!-- ===== Tabs ===== -->
+    <div class="tabs">
+        {% if can_see_main %}
+        <button class="tab-btn active" onclick="switchTab('main')">Main</button>
+        {% endif %}
+        {% if can_see_diem %}
+        <button class="tab-btn {% if not can_see_main %}active{% endif %}" onclick="switchTab('diem')">Điểm</button>
+        {% endif %}
+        <button class="tab-btn {% if not can_see_main and not can_see_diem %}active{% endif %}" onclick="switchTab('thongke')">Thống kê</button>
+        {% if user_role == 'admin' %}
+        <button class="tab-btn" onclick="switchTab('manage')">Manage</button>
+        {% endif %}
+        {% if can_see_logs %}
+        <button class="tab-btn" onclick="switchTab('nhatky')">Nhật ký</button>
+        {% endif %}
+    </div>
+
+    <!-- ===== Tab Main ===== -->
+    {% if can_see_main %}
+    <div id="tab-main" class="tab-content {% if can_see_main %}active{% endif %}">
+        <!-- ===== Add row ===== -->
+        <section class="card">
+            <form method="post" class="add-row-responsive" id="add-form">
+                <div class="form-grid">
+                    <div class="form-group">
+                        <label>Chức vụ</label>
+                        <select name="chuc_vu" id="chuc_vu_select" onchange="toggleRoleFields()">
+                            <option>Thực tập</option>
+                            <option>Cảnh sát viên</option>
+                            <option>Sĩ quan dự bị</option>
+                        </select>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Tên</label>
+                        <input name="name" placeholder="Tên" required>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Giao thông</label>
+                        <input type="number" name="giao_thong" id="giao_thong_input" placeholder="0" value="0">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>1–5</label>
+                        <input type="number" name="xa_1_4" placeholder="0" value="0">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>6</label>
+                        <input type="number" name="xa_5_6" placeholder="0" value="0">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Giám sát</label>
+                        <input type="number" name="giam_sat" id="giam_sat_input" placeholder="0" value="0">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label>Án sai</label>
+                        <input type="number" name="an_sai" placeholder="0" value="0">
+                    </div>
+                    
+                    <div class="form-group full-width">
+                        <label>User ID</label>
+                        <input type="text" name="user_id" id="user_id_input" placeholder="Nhập User ID (tự điền bằng tay)">
+                    </div>
+                    
+                    <div class="form-group full-width">
+                        <button type="submit" class="btn-submit">Thêm</button>
+                    </div>
+                </div>
+            </form>
+        </section>
+
+        <!-- ===== Table ===== -->
+        <section class="card">
+            <table>
+                <thead>
+                    <tr>
+                        <th>Chức vụ</th>
+                        <th>Tên</th>
+                        <th>Giao thông</th>
+                        <th>1–5</th>
+                        <th>6</th>
+                        <th>GS</th>
+                        <th>Án sai</th>
+                        <th>Tổng</th>
+                        <th>Điểm</th>
+                        <th>User ID</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for r in data %}
+                    <tr>
+                        {% if user_role in ['admin', 'editer'] %}
+                        <td class="chuc-vu-cell">
+                            <select class="chuc-vu-select" data-id="{{r.id}}" onchange="editChucVu({{r.id}}, this.value)">
+                                <option value="Thực tập" {% if r.chuc_vu == 'Thực tập' %}selected{% endif %}>Thực tập</option>
+                                <option value="Cảnh sát viên" {% if r.chuc_vu == 'Cảnh sát viên' %}selected{% endif %}>Cảnh sát viên</option>
+                                <option value="Sĩ quan dự bị" {% if r.chuc_vu == 'Sĩ quan dự bị' %}selected{% endif %}>Sĩ quan dự bị</option>
+                            </select>
+                        </td>
+                        <td contenteditable onblur="edit({{r.id}},'name',this)">{{r.name}}</td>
+                        <td class="giao-thong-cell" data-chuc-vu="{{r.chuc_vu}}" data-id="{{r.id}}"
+                            {% if r.chuc_vu == 'Thực tập' %}contenteditable onblur="edit({{r.id}},'giao_thong',this)"{% else %}contenteditable="false" style="opacity:0.6;cursor:not-allowed"{% endif %}
+                            >{% if r.chuc_vu == 'Thực tập' %}{{r.giao_thong or 0}}{% else %}X{% endif %}</td>
+                        <td contenteditable onblur="edit({{r.id}},'xa_1_4',this)">{{r.xa_1_4}}</td>
+                        <td contenteditable onblur="edit({{r.id}},'xa_5_6',this)">{{r.xa_5_6}}</td>
+                        <td class="giam-sat-cell" data-chuc-vu="{{r.chuc_vu}}" data-id="{{r.id}}"
+                            {% if r.chuc_vu == 'Thực tập' %}contenteditable="false" style="opacity:0.6;cursor:not-allowed"{% else %}contenteditable onblur="edit({{r.id}},'giam_sat',this)"{% endif %}
+                            >{% if r.chuc_vu == 'Thực tập' %}X{% else %}{{r.giam_sat}}{% endif %}</td>
+                        <td contenteditable onblur="edit({{r.id}},'an_sai',this)">{{r.an_sai}}</td>
+                        {% else %}
+                        <td>{{r.chuc_vu}}</td>
+                        <td>{{r.name}}</td>
+                        <td>{% if r.chuc_vu == 'Thực tập' %}{{r.giao_thong or 0}}{% else %}X{% endif %}</td>
+                        <td>{{r.xa_1_4}}</td>
+                        <td>{{r.xa_5_6}}</td>
+                        <td>{% if r.chuc_vu == 'Thực tập' %}X{% else %}{{r.giam_sat}}{% endif %}</td>
+                        <td>{{r.an_sai}}</td>
+                        {% endif %}
+                        <td class="muted tong_an">{{r.tong_an}}</td>
+                        <td class="strong diem">{{r.diem}}</td>
+                        <td class="muted">{{r.user_id or '-'}}</td>
+                        {% if user_role in ['admin', 'editer'] %}
+                        <td><a href="/delete/{{r.id}}" class="del">×</a></td>
+                        {% else %}
+                        <td></td>
+                        {% endif %}
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </section>
+    </div>
+    {% endif %}
+
+    <!-- ===== Tab Điểm (user, editer, admin - chỉ xem) ===== -->
+    {% if can_see_diem %}
+    <div id="tab-diem" class="tab-content {% if not can_see_main %}active{% endif %}">
+        <section class="card diem-page">
+            <h2 class="diem-title">Bảng điểm</h2>
+            <p class="diem-subtitle">Xếp theo chức vụ rồi điểm</p>
+            <div class="diem-cards">
+                {% for r in data %}
+                <div class="diem-card">
+                    <div class="diem-card-header">
+                        <span class="diem-chuc-vu">{{r.chuc_vu}}</span>
+                        <span class="diem-ten">{{r.name}}</span>
+                    </div>
+                    <div class="diem-card-body">
+                        <div class="diem-row">
+                            <span class="diem-label">Giao thông</span>
+                            <span class="diem-val">{% if r.chuc_vu == 'Thực tập' %}{{r.giao_thong or 0}}{% else %}—{% endif %}</span>
+                        </div>
+                        <div class="diem-row">
+                            <span class="diem-label">1–5</span>
+                            <span class="diem-val">{{r.xa_1_4}}</span>
+                        </div>
+                        <div class="diem-row">
+                            <span class="diem-label">6</span>
+                            <span class="diem-val">{{r.xa_5_6}}</span>
+                        </div>
+                        <div class="diem-row">
+                            <span class="diem-label">Giám sát</span>
+                            <span class="diem-val">{% if r.chuc_vu == 'Thực tập' %}—{% else %}{{r.giam_sat}}{% endif %}</span>
+                        </div>
+                        <div class="diem-row">
+                            <span class="diem-label">Án sai</span>
+                            <span class="diem-val">{{r.an_sai}}</span>
+                        </div>
+                    </div>
+                    <div class="diem-card-footer">
+                        <div class="diem-footer-item">
+                            <span class="diem-footer-label">Tổng</span>
+                            <span class="diem-footer-val">{{r.tong_an}}</span>
+                        </div>
+                        <div class="diem-footer-item diem-highlight">
+                            <span class="diem-footer-label">Điểm</span>
+                            <span class="diem-footer-val diem-score">{{r.diem}}</span>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% if not data %}
+            <p class="diem-empty">Chưa có dữ liệu</p>
+            {% endif %}
+        </section>
+    </div>
+    {% endif %}
+
+    <!-- ===== Tab Manage (Admin) ===== -->
+    {% if user_role == 'admin' %}
+    <div id="tab-manage" class="tab-content">
+        <section class="card">
+            <div class="manage-header">
+                <h2>Quản lý tài khoản</h2>
+                <button class="btn-toggle" onclick="loadUsers()">Tải lại</button>
+            </div>
+
+            <div class="manage-grid">
+                <div class="manage-card">
+                    <h3>Tạo tài khoản</h3>
+                    <form id="createAccountForm" class="create-account-form">
+                        <div class="form-row">
+                            <div class="input-group-full">
+                                <input type="text" id="new_username" placeholder="Tên đăng nhập" required>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="input-group-full">
+                                <input type="password" id="new_password" placeholder="Mật khẩu" required>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <div class="input-group-full">
+                                <select id="new_role" required>
+                                    <option value="user">user</option>
+                                    <option value="editer">editer</option>
+                                    <option value="admin">admin</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="form-row">
+                            <button type="submit" class="btn-create">Tạo tài khoản</button>
+                        </div>
+                        <div id="createAccountResult" class="result-message"></div>
+                    </form>
+                </div>
+
+                <div class="manage-card">
+                    <h3>Danh sách tài khoản</h3>
+                    <div class="top-scores-container">
+                        <table class="top-scores-table">
+                            <thead>
+                                <tr>
+                                    <th>ID</th>
+                                    <th>Username</th>
+                                    <th>Password</th>
+                                    <th>Role</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody id="users-body">
+                                <tr><td colspan="5" style="text-align:center;color:#9ca3af;">Đang tải...</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+    {% endif %}
+
+    <!-- ===== Tab Thống kê ===== -->
+    <div id="tab-thongke" class="tab-content {% if not can_see_main %}active{% endif %}">
+        <!-- ===== Chart Section ===== -->
+        <section class="card">
+            <div class="chart-header">
+                <h2>Thống kê điểm sở Paleto Bay Sheriff</h2>
+                <div class="chart-controls">
+                    <button id="chart-toggle" class="btn-toggle" onclick="toggleChartType()">
+                        <span id="chart-type-text">Cột</span>
+                    </button>
+                </div>
+            </div>
+            <div class="chart-container">
+                <canvas id="statsChart"></canvas>
+            </div>
+        </section>
+
+        <!-- ===== Top High Scores ===== -->
+        <section class="card">
+            <h2>Top người điểm cao</h2>
+            <div class="top-scores-container">
+                <table class="top-scores-table">
+                    <thead>
+                        <tr>
+                            <th>Hạng</th>
+                            <th>Tên</th>
+                            <th>Tổng điểm</th>
+                        </tr>
+                    </thead>
+                    <tbody id="top-scores-body">
+                        <tr>
+                            <td colspan="3" style="text-align: center; color: #9ca3af;">Đang tải...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <!-- ===== Tab Nhật ký ===== -->
+    {% if can_see_logs %}
+    <div id="tab-nhatky" class="tab-content">
+        <section class="card">
+            <h2>Nhật ký hoạt động</h2>
+            <div class="nhatky-container">
+                <table class="nhatky-table">
+                    <thead>
+                        <tr>
+                            <th>Thời gian</th>
+                            <th>Người thực hiện</th>
+                            <th>Hành động</th>
+                            <th>Chi tiết</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in nhat_ky %}
+                        <tr>
+                            <td>{{log.time}}</td>
+                            <td><strong>{{log.user_name}}</strong></td>
+                            <td>
+                                {% if log.action == 'ADD' %}
+                                    <span style="color: #60a5fa;">➕ Thêm</span>
+                                {% elif log.action == 'INLINE_EDIT' %}
+                                    <span style="color: #fbbf24;">✏️ Chỉnh sửa</span>
+                                {% elif log.action == 'DELETE' %}
+                                    <span style="color: #ef4444;">🗑️ Xóa</span>
+                                {% elif log.action == 'CREATE_ACCOUNT' %}
+                                    <span style="color: #10b981;">👤 Tạo tài khoản</span>
+                                {% else %}
+                                    {{log.action}}
+                                {% endif %}
+                            </td>
+                            <td>{{log.details}}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+    {% endif %}
+
+</div>
+
+<script>
+let chart = null;
+let chartType = 'bar'; // 'bar' hoặc 'line'
+
+// Toggle Giao thông + Giám sát theo chức vụ (form thêm mới)
+function toggleRoleFields() {
+    const chucVuSelect = document.getElementById('chuc_vu_select');
+    const giamSatInput = document.getElementById('giam_sat_input');
+    const giaoThongInput = document.getElementById('giao_thong_input');
+    
+    if (chucVuSelect.value === 'Thực tập') {
+        giaoThongInput.disabled = false;
+        giaoThongInput.style.opacity = '1';
+        giaoThongInput.style.cursor = 'text';
+        giamSatInput.disabled = true;
+        giamSatInput.value = 0;
+        giamSatInput.placeholder = 'X';
+        giamSatInput.style.opacity = '0.6';
+        giamSatInput.style.cursor = 'not-allowed';
+    } else {
+        giaoThongInput.disabled = true;
+        giaoThongInput.value = 0;
+        giaoThongInput.placeholder = 'X';
+        giaoThongInput.style.opacity = '0.6';
+        giaoThongInput.style.cursor = 'not-allowed';
+        giamSatInput.disabled = false;
+        giamSatInput.placeholder = '0';
+        giamSatInput.style.opacity = '1';
+        giamSatInput.style.cursor = 'text';
+    }
+}
+
+// Edit chức vụ qua select (chỉ 3 lựa chọn)
+function editChucVu(id, value) {
+    fetch("/inline_edit", {
+        method: "POST",
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ id, field: 'chuc_vu', value })
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (d.success) {
+            const tr = document.querySelector(`select.chuc-vu-select[data-id="${id}"]`)?.closest('tr');
+            if (tr) {
+                tr.querySelector(".tong_an").innerText = d.tong_an;
+                tr.querySelector(".diem").innerText = d.diem;
+                const gtCell = tr.querySelector(".giao-thong-cell");
+                const gsCell = tr.querySelector(".giam-sat-cell");
+                if (value === 'Thực tập') {
+                    gtCell.setAttribute('contenteditable', 'true');
+                    gtCell.style.opacity = '1';
+                    gtCell.style.cursor = 'text';
+                    gtCell.innerText = d.giao_thong ?? 0;
+                    gtCell.setAttribute('data-chuc-vu', 'Thực tập');
+                    gtCell.onblur = () => edit(id, 'giao_thong', gtCell);
+                    gsCell.setAttribute('contenteditable', 'false');
+                    gsCell.style.opacity = '0.6';
+                    gsCell.style.cursor = 'not-allowed';
+                    gsCell.innerText = 'X';
+                    gsCell.setAttribute('data-chuc-vu', 'Thực tập');
+                } else {
+                    gtCell.setAttribute('contenteditable', 'false');
+                    gtCell.style.opacity = '0.6';
+                    gtCell.style.cursor = 'not-allowed';
+                    gtCell.innerText = 'X';
+                    gtCell.setAttribute('data-chuc-vu', value);
+                    gsCell.setAttribute('contenteditable', 'true');
+                    gsCell.style.opacity = '1';
+                    gsCell.style.cursor = 'text';
+                    gsCell.innerText = d.giam_sat ?? 0;
+                    gsCell.setAttribute('data-chuc-vu', value);
+                    gsCell.onblur = () => edit(id, 'giam_sat', gsCell);
+                }
+            }
+        }
+    });
+}
+
+// Khởi tạo khi trang load
+document.addEventListener('DOMContentLoaded', function() {
+    toggleRoleFields();
+});
+
+function edit(id, field, el){
+    const val = (el.innerText || "").trim()
+    fetch("/inline_edit",{
+        method:"POST",
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({ id, field, value: val })
+    })
+    .then(r=>r.json())
+    .then(d=>{
+        if(d.success){
+            const tr = el.closest("tr")
+            tr.querySelector(".tong_an").innerText = d.tong_an
+            tr.querySelector(".diem").innerText = d.diem
+            // Cập nhật ô số với giá trị đã lưu (xóa hết = 0, lỗi = 0)
+            if(d.saved_value !== undefined){
+                el.innerText = d.saved_value
+            }
+        }
+    })
+}
+
+document.addEventListener("keydown", e=>{
+    if(e.key==="Enter" && e.target.hasAttribute("contenteditable")){
+        e.preventDefault()
+        e.target.blur()
+    }
+})
+
+// Tab switching
+function switchTab(tabName) {
+    // Ẩn tất cả tabs
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    
+    // Xóa active từ tất cả buttons
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+    
+    // Hiển thị tab được chọn
+    const targetTab = document.getElementById(`tab-${tabName}`);
+    if(targetTab) {
+        targetTab.classList.add('active');
+    }
+    
+    // Set active cho button tương ứng
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+        const btnText = btn.textContent.trim();
+        if((tabName === 'main' && btnText === 'Main') ||
+           (tabName === 'diem' && btnText === 'Điểm') ||
+           (tabName === 'thongke' && btnText === 'Thống kê') ||
+           (tabName === 'manage' && btnText === 'Manage') ||
+           (tabName === 'nhatky' && btnText === 'Nhật ký')) {
+            btn.classList.add('active');
+        }
+    });
+    
+    // Nếu là tab thống kê, load dữ liệu
+    if(tabName === 'thongke') {
+        loadStatistics();
+        loadTopScores();
+    }
+}
+
+// (đã bỏ discord_id) user_id nhập tay
+
+// Tự động load thống kê nếu user chỉ có quyền xem thống kê
+{% if not can_see_main %}
+document.addEventListener('DOMContentLoaded', function() {
+    loadStatistics();
+    loadTopScores();
+});
+{% endif %}
+
+// Load statistics chart
+function loadStatistics() {
+    fetch('/api/thongke')
+        .then(r => r.json())
+        .then(data => {
+            const labels = data.map(d => d.month);
+            const values = data.map(d => d.value);
+            
+            const ctx = document.getElementById('statsChart').getContext('2d');
+            
+            // Xóa chart cũ nếu có
+            if(chart) {
+                chart.destroy();
+            }
+            
+            chart = new Chart(ctx, {
+                type: chartType,
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Tổng số PS',
+                        data: values,
+                        backgroundColor: chartType === 'bar' ? 'rgba(37, 99, 235, 0.6)' : 'rgba(37, 99, 235, 0.2)',
+                        borderColor: 'rgba(37, 99, 235, 1)',
+                        borderWidth: 2,
+                        fill: chartType === 'line',
+                        tension: 0.4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            display: true,
+                            labels: {
+                                color: '#e5e7eb'
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                color: '#9ca3af'
+                            },
+                            grid: {
+                                color: 'rgba(31, 41, 55, 0.5)'
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                color: '#9ca3af'
+                            },
+                            grid: {
+                                color: 'rgba(31, 41, 55, 0.5)'
+                            }
+                        }
+                    }
+                }
+            });
+        })
+        .catch(err => {
+            console.error('Error loading statistics:', err);
+        });
+}
+
+// Toggle chart type
+function toggleChartType() {
+    chartType = chartType === 'bar' ? 'line' : 'bar';
+    document.getElementById('chart-type-text').innerText = chartType === 'bar' ? 'Cột' : 'Đường';
+    loadStatistics();
+}
+
+// Load top scores
+function loadTopScores() {
+    fetch('/api/top')
+        .then(r => r.json())
+        .then(data => {
+            const tbody = document.getElementById('top-scores-body');
+            if(data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: #9ca3af;">Chưa có dữ liệu</td></tr>';
+                return;
+            }
+            
+            tbody.innerHTML = data.map((item, index) => {
+                const rank = index + 1;
+                const medal = rank === 1 ? '🥇' : rank === 2 ? '🥈' : rank === 3 ? '🥉' : '';
+                return `
+                    <tr>
+                        <td><span class="rank">${medal} ${rank}</span></td>
+                        <td><strong>${item.name}</strong></td>
+                        <td class="score-value">${item.score || 0}</td>
+                    </tr>
+                `;
+            }).join('');
+        })
+        .catch(err => {
+            console.error('Error loading top scores:', err);
+            document.getElementById('top-scores-body').innerHTML = 
+                '<tr><td colspan="3" style="text-align: center; color: #ef4444;">Lỗi khi tải dữ liệu</td></tr>';
+        });
+}
+
+// Tạo tài khoản từ dashboard
+const createAccountForm = document.getElementById('createAccountForm');
+if(createAccountForm) {
+    createAccountForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        const username = document.getElementById('new_username').value.trim();
+        const password = document.getElementById('new_password').value;
+        const role = document.getElementById('new_role').value;
+        const resultDiv = document.getElementById('createAccountResult');
+        
+        if(!username || !password) {
+            resultDiv.innerHTML = '<div style="color: #ef4444; padding: 12px; background: #1f2937; border-radius: 8px;">Vui lòng điền đầy đủ thông tin</div>';
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api/addaccount', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({username, password, role})
+            });
+
+            const contentType = response.headers.get('content-type') || '';
+            let data;
+
+            // Đảm bảo chỉ parse JSON khi server thật sự trả JSON
+            if (contentType.includes('application/json')) {
+                data = await response.json();
+            } else {
+                const text = await response.text();
+                throw new Error(`Server trả về dữ liệu không phải JSON: ${text.slice(0, 120)}...`);
+            }
+
+            // Nếu HTTP status lỗi nhưng vẫn có JSON
+            if (!response.ok) {
+                const errMsg = (data && (data.error || data.message)) || `Lỗi HTTP ${response.status}`;
+                resultDiv.innerHTML = `<div style="color: #ef4444; padding: 12px; background: #1f2937; border-radius: 8px;">❌ ${errMsg}</div>`;
+                return;
+            }
+
+            if(data.success) {
+                const codeMsg = data.code ? `<br><strong>Mã đăng nhập: ${data.code}</strong>` : '';
+                resultDiv.innerHTML = `<div style="color: #10b981; padding: 12px; background: #1f2937; border-radius: 8px;">✅ ${data.message}${codeMsg}</div>`;
+                document.getElementById('createAccountForm').reset();
+            } else {
+                resultDiv.innerHTML = `<div style="color: #ef4444; padding: 12px; background: #1f2937; border-radius: 8px;">❌ ${data.error}</div>`;
+            }
+        } catch(error) {
+            resultDiv.innerHTML = `<div style="color: #ef4444; padding: 12px; background: #1f2937; border-radius: 8px;">❌ Lỗi: ${error.message}</div>`;
+        }
+    });
+}
+
+async function loadUsers() {
+    const tbody = document.getElementById('users-body');
+    if(!tbody) return;
+    tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#9ca3af;">Đang tải...</td></tr>';
+    try{
+        const r = await fetch('/api/users');
+        const d = await r.json();
+        if(!d.success){
+            tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#ef4444;">${d.error || 'Lỗi'}</td></tr>`;
+            return;
+        }
+        tbody.innerHTML = d.users.map(u => `
+            <tr>
+                <td>${u.id}</td>
+                <td><strong>${u.username}</strong></td>
+                <td><span class="muted">${u.password || ''}</span></td>
+                <td>
+                    <select onchange="updateUserRole(${u.id}, this.value)" ${u.username==='admin' ? 'disabled' : ''}>
+                        <option value="admin" ${u.role==='admin' ? 'selected' : ''}>admin</option>
+                        <option value="editer" ${u.role==='editer' ? 'selected' : ''}>editer</option>
+                        <option value="user" ${u.role==='user' ? 'selected' : ''}>user</option>
+                    </select>
+                </td>
+                <td>
+                    ${u.username==='admin' ? '' : `<button class="btn-toggle" onclick="deleteUser(${u.id})">Xóa</button>`}
+                </td>
+            </tr>
+        `).join('');
+    }catch(e){
+        tbody.innerHTML = `<tr><td colspan="5" style="text-align:center;color:#ef4444;">${e.message}</td></tr>`;
+    }
+}
+
+async function updateUserRole(id, role){
+    await fetch(`/api/users/${id}/role`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({role})});
+}
+
+async function deleteUser(id){
+    if(!confirm('Xóa tài khoản này?')) return;
+    const r = await fetch(`/api/users/${id}`, {method:'DELETE'});
+    const d = await r.json();
+    if(!d.success) alert(d.error || 'Lỗi');
+    loadUsers();
+}
+
+document.addEventListener('DOMContentLoaded', function(){
+    loadUsers();
+});
+</script>
+
+</body>
+</html>

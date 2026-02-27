@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Login</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/style.css">
+
+</head>
+<body class="auth-body">
+
+<!-- overlay dùng cho SPA transition -->
+<div id="page-overlay"></div>
+
+<div class="auth-wrapper">
+    <div class="auth-card">
+        <h1>Đăng nhập</h1>
+        <p>Hệ thống quản lý xử án</p>
+
+        <form method="post" id="loginForm" onsubmit="startTransition()">
+            <div class="input-group">
+                <input type="text" name="username" id="username" required autofocus>
+                <label>Tài khoản</label>
+            </div>
+
+            <div class="input-group">
+                <input type="password" name="password" id="password" required>
+                <label>Mật khẩu</label>
+            </div>
+            <button type="submit" class="btn-primary">Đăng nhập</button>
+        </form>
+    </div>
+</div>
+
+<script>
+function startTransition(){
+    document.getElementById("page-overlay").classList.add("active")
+}
+</script>
+
+</body>
+</html>
