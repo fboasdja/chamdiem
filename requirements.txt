@@ -165,7 +165,6 @@ yt-dlp==2025.11.12
 yt-dlp-ejs==0.3.1
 zope.event==5.0
 zope.interface==7.2
-=======
 Flask==3.0.0
 discord.py==2.3.2
 aiohttp==3.9.1
