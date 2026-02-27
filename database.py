@@ -3,7 +3,9 @@ import sqlite3
 from typing import Any, Optional, Sequence
 
 
-DATABASE_URL = os.environ.get("DATABASE_URL")
+_RAW_DATABASE_URL = os.environ.get("DATABASE_URL")
+# Render env đôi khi bị dính newline khi paste -> gây lỗi sslmode="require\n"
+DATABASE_URL = (_RAW_DATABASE_URL.strip() if isinstance(_RAW_DATABASE_URL, str) else None) or None
 
 
 def is_postgres() -> bool:
@@ -44,18 +46,23 @@ def get_db():
                 if infos:
                     hostaddr = infos[0][4][0]
             qs = parse_qs(u.query or "")
-            if "sslmode" not in qs:
+            if "sslmode" in qs and qs["sslmode"]:
+                # lấy sslmode từ URL nhưng phải strip để tránh newline
+                sslmode = str(qs["sslmode"][0]).strip()
+                if not sslmode:
+                    sslmode = "require"
+            else:
                 sslmode = "require"
         except Exception:
             # fallback: dùng default behavior
             hostaddr = None
-            sslmode = None
+            sslmode = "require"
 
         kwargs = {"cursor_factory": _AdaptRealDictCursor, "connect_timeout": 10}
         if hostaddr:
             kwargs["hostaddr"] = hostaddr
         if sslmode:
-            kwargs["sslmode"] = sslmode
+            kwargs["sslmode"] = sslmode.strip()
         return psycopg2.connect(DATABASE_URL, **kwargs)
 
     conn = sqlite3.connect("database.db", timeout=15, check_same_thread=False)
