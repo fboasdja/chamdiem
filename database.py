@@ -21,7 +21,7 @@ def get_db():
         import psycopg2
         import psycopg2.extras
         import socket
-        from urllib.parse import urlparse, parse_qs
+        from urllib.parse import urlparse, parse_qs, unquote
 
         class _AdaptRealDictCursor(psycopg2.extras.RealDictCursor):
             def execute(self, query, vars=None):
@@ -68,12 +68,29 @@ def get_db():
             hostaddr = None
             sslmode = "require"
 
-        kwargs = {"cursor_factory": _AdaptRealDictCursor, "connect_timeout": 10}
+        # IMPORTANT:
+        # Với URI DSN (postgresql://...), libpq có thể bỏ qua hostaddr.
+        # => Luôn parse URL và connect bằng keyword args để hostaddr (IPv4) có tác dụng.
+        u = urlparse(DATABASE_URL)
+        dbname = (u.path or "").lstrip("/") or "postgres"
+        user = unquote(u.username or "")
+        password = unquote(u.password or "")
+        host = (u.hostname or "").strip()
+        port = u.port or 5432
+
+        kwargs = {
+            "dbname": dbname,
+            "user": user,
+            "password": password,
+            "host": host,
+            "port": port,
+            "cursor_factory": _AdaptRealDictCursor,
+            "connect_timeout": 10,
+            "sslmode": (sslmode or "require").strip(),
+        }
         if hostaddr:
             kwargs["hostaddr"] = hostaddr
-        if sslmode:
-            kwargs["sslmode"] = sslmode.strip()
-        return psycopg2.connect(DATABASE_URL, **kwargs)
+        return psycopg2.connect(**kwargs)
 
     conn = sqlite3.connect("database.db", timeout=15, check_same_thread=False)
     conn.row_factory = sqlite3.Row
