@@ -35,16 +35,26 @@ def get_db():
                 return super().executemany(query, vars_list)
 
         # Render đôi khi không có route IPv6 -> Supabase resolve ra IPv6 sẽ lỗi "Network is unreachable".
-        # Ep ưu tiên IPv4 bằng hostaddr nếu resolve được A record.
+        # Ép ưu tiên IPv4 bằng hostaddr. Nếu cần có thể set env DATABASE_HOSTADDR=IPv4.
         hostaddr = None
         sslmode = None
         try:
             u = urlparse(DATABASE_URL)
             if u.hostname:
-                port = u.port or 5432
-                infos = socket.getaddrinfo(u.hostname, port, socket.AF_INET, socket.SOCK_STREAM)
-                if infos:
-                    hostaddr = infos[0][4][0]
+                # 1) ưu tiên env override
+                env_hostaddr = (os.environ.get("DATABASE_HOSTADDR") or "").strip()
+                if env_hostaddr:
+                    hostaddr = env_hostaddr
+                else:
+                    # 2) gethostbyname: query A record, không phụ thuộc IPv4 interface (tránh AI_ADDRCONFIG)
+                    try:
+                        hostaddr = socket.gethostbyname(u.hostname)
+                    except Exception:
+                        # 3) fallback getaddrinfo AF_INET
+                        port = u.port or 5432
+                        infos = socket.getaddrinfo(u.hostname, port, socket.AF_INET, socket.SOCK_STREAM)
+                        if infos:
+                            hostaddr = infos[0][4][0]
             qs = parse_qs(u.query or "")
             if "sslmode" in qs and qs["sslmode"]:
                 # lấy sslmode từ URL nhưng phải strip để tránh newline
