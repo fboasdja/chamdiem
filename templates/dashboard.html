@@ -395,11 +395,17 @@
         <!-- ===== Chart Section ===== -->
         <section class="card">
             <div class="chart-header">
-                <h2>Thống kê điểm sở Paleto Bay Sheriff</h2>
+                <div>
+                    <h2 id="stats-title">{{ stats_title }}</h2>
+                    <p class="muted" id="stats-label" style="margin:4px 0 0;font-size:13px;">{{ stats_label }}</p>
+                </div>
                 <div class="chart-controls">
                     <button id="chart-toggle" class="btn-toggle" onclick="toggleChartType()">
                         <span id="chart-type-text">Cột</span>
                     </button>
+                    {% if can_edit_stats %}
+                    <button class="btn-toggle" onclick="editStatsTexts()">Sửa</button>
+                    {% endif %}
                 </div>
             </div>
             <div class="chart-container">
@@ -753,7 +759,7 @@ function loadStatistics() {
                 data: {
                     labels: labels,
                     datasets: [{
-                        label: 'Tổng số PS',
+                        label: '{{ stats_label }}',
                         data: values,
                         backgroundColor: chartType === 'bar' ? 'rgba(37, 99, 235, 0.6)' : 'rgba(37, 99, 235, 0.2)',
                         borderColor: 'rgba(37, 99, 235, 1)',
@@ -805,6 +811,46 @@ function toggleChartType() {
     chartType = chartType === 'bar' ? 'line' : 'bar';
     document.getElementById('chart-type-text').innerText = chartType === 'bar' ? 'Cột' : 'Đường';
     loadStatistics();
+}
+
+// Admin chỉnh sửa tiêu đề + nhãn thống kê (theo từng Sở)
+function editStatsTexts() {
+    const titleEl = document.getElementById('stats-title');
+    const labelEl = document.getElementById('stats-label');
+    const currentTitle = (titleEl?.innerText || '').trim() || 'Thống kê điểm';
+    const currentLabel = (labelEl?.innerText || '').trim() || 'Tổng số PS';
+    const newTitle = prompt('Tiêu đề thống kê:', currentTitle);
+    if (newTitle === null) return;
+    const newLabel = prompt('Nhãn trục / chú thích (VD: Tổng số PS):', currentLabel);
+    if (newLabel === null) return;
+
+    fetch('/api/settings/stats', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+            title: newTitle.trim(),
+            label: newLabel.trim(),
+            so: '{{ current_so }}'
+        })
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (!d.success) {
+            alert(d.error || 'Không thể lưu cấu hình');
+            return;
+        }
+        if (titleEl) titleEl.innerText = d.title;
+        if (labelEl) labelEl.innerText = d.label;
+        // update chart label nếu chart đang hiển thị
+        if (window.chart && window.chart.data && window.chart.data.datasets && window.chart.data.datasets[0]) {
+            window.chart.data.datasets[0].label = d.label;
+            window.chart.update();
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        alert('Lỗi khi lưu cấu hình thống kê');
+    });
 }
 
 // Load top scores

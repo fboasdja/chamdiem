@@ -713,6 +713,9 @@ def dashboard():
         so_allowed=so_allowed,
         monthly_title=get_setting("monthly_title", "THỐNG KÊ ĐIỂM THÁNG"),
         can_edit_title=(user_role == "admin"),
+        stats_title=get_setting(f"stats_title_{current_so}", f"Thống kê điểm Sở {current_so}"),
+        stats_label=get_setting(f"stats_label_{current_so}", "Tổng số PS"),
+        can_edit_stats=(user_role == "admin"),
     )
 
 # ================= INLINE EDIT (ENTER LƯU) =================
@@ -867,6 +870,33 @@ def api_set_monthly_title():
     conn.commit()
     conn.close()
     return jsonify(success=True, title=title)
+
+
+@app.post("/api/settings/stats")
+def api_set_stats_settings():
+    if not session.get("login") or session.get("role") != "admin":
+        return jsonify(success=False, error="Không có quyền (chỉ admin)"), 403
+    data = request.json or {}
+    title = (data.get("title") or "").strip()
+    label = (data.get("label") or "").strip()
+    so = _normalize_so(data.get("so"))
+    if not title:
+        return jsonify(success=False, error="Tiêu đề không được để trống"), 400
+    if not label:
+        return jsonify(success=False, error="Nhãn trục không được để trống"), 400
+    conn = get_db()
+    c = conn.cursor()
+    c.execute(
+        "INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (f"stats_title_{so}", title),
+    )
+    c.execute(
+        "INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        (f"stats_label_{so}", label),
+    )
+    conn.commit()
+    conn.close()
+    return jsonify(success=True, title=title, label=label, so=so)
 
 @app.route("/logout")
 def logout():

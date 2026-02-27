@@ -562,7 +562,11 @@ td[contenteditable="false"]:focus{
 
 .auth-body{
     height:100vh;
-    background:transparent;
+    background:
+        radial-gradient(1200px 600px at 15% 10%, rgba(96,165,250,.18), transparent 55%),
+        radial-gradient(900px 500px at 85% 20%, rgba(16,185,129,.14), transparent 55%),
+        radial-gradient(900px 700px at 60% 90%, rgba(37,99,235,.14), transparent 60%),
+        linear-gradient(180deg, var(--bg0), var(--bg1));
     overflow:hidden;
 }
 
