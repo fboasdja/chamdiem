@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="vi" data-login-success="{{ 1 if login_success else 0 }}" data-login-error="{{ 1 if login_error else 0 }}">
+<html lang="vi" data-login-success="{{ 1 if login_success else 0 }}" data-login-error="{{ 1 if login_error else 0 }}" data-maintenance="{{ 1 if maintenance_enabled else 0 }}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -24,6 +24,28 @@
             </div>
         </div>
 
+        {% if maintenance_enabled %}
+        <div class="maintenance-banner">
+            <div class="maintenance-glow"></div>
+            <div class="maintenance-icon" aria-hidden="true">🛠</div>
+            <div class="maintenance-content">
+                <div class="maintenance-title">Hệ thống đang nâng cấp</div>
+                <div class="maintenance-sub">
+                    Dự kiến hoạt động lại:
+                    <span class="maintenance-time">{{ maintenance_until or '—' }}</span>
+                </div>
+                {% if maintenance_message %}
+                <div class="maintenance-note">{{ maintenance_message }}</div>
+                {% else %}
+                <div class="maintenance-note">Trong thời gian này bạn không thể đăng nhập. Vui lòng quay lại sau ít phút.</div>
+                {% endif %}
+                <div class="maintenance-note" style="margin-top:10px;font-size:11px;opacity:.85;">
+                    © FAK – All rights reserved.
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         {% if login_success %}
         <div class="auth-status success">
             <div class="status-icon" aria-hidden="true">✓</div>
@@ -34,28 +56,28 @@
         </div>
         {% endif %}
 
-        {% if login_error %}
-        <div class="auth-status error">
-            <div class="status-icon" aria-hidden="true">!</div>
-            <div class="status-text">
-                <div class="status-title">Đăng nhập thất bại</div>
-                <div class="status-sub">{{ login_error }}</div>
+            {% if login_error %}
+            <div class="auth-status error">
+                <div class="status-icon" aria-hidden="true">!</div>
+                <div class="status-text">
+                    <div class="status-title">Đăng nhập thất bại</div>
+                    <div class="status-sub">{{ login_error }}</div>
+                </div>
             </div>
-        </div>
-        {% endif %}
+            {% endif %}
 
-        <form method="post" id="loginForm">
-            <div class="input-group">
-                <input type="text" name="username" id="username" required autofocus value="{{ last_username or '' }}">
-                <label>Tài khoản</label>
-            </div>
+            <form method="post" id="loginForm">
+                <div class="input-group">
+                    <input type="text" name="username" id="username" required autofocus value="{{ last_username or '' }}">
+                    <label>Tài khoản</label>
+                </div>
 
-            <div class="input-group">
-                <input type="password" name="password" id="password" required>
-                <label>Mật khẩu</label>
-            </div>
-            <button type="submit" class="btn-primary">Đăng nhập</button>
-        </form>
+                <div class="input-group">
+                    <input type="password" name="password" id="password" required>
+                    <label>Mật khẩu</label>
+                </div>
+                <button type="submit" class="btn-primary">Đăng nhập</button>
+            </form>
     </div>
 </div>
 
@@ -64,6 +86,7 @@ const overlay = document.getElementById("page-overlay");
 const root = document.documentElement;
 const loginSuccess = (root?.dataset?.loginSuccess === "1");
 const loginError = (root?.dataset?.loginError === "1");
+const maintenanceEnabled = (root?.dataset?.maintenance === "1");
 
 if (loginSuccess) {
   if (overlay) overlay.classList.add("active");
@@ -79,6 +102,8 @@ if (loginError) {
     if (pw) pw.focus();
   }, 50);
 }
+
+// Khi đang bảo trì thì form đã bị ẩn ở phía server, không cần xử lý JS
 </script>
 
 </body>

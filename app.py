@@ -296,14 +296,21 @@ def api_delete_user(user_id: int):
         return jsonify(success=False, error="Không có quyền (chỉ admin)"), 403
     conn = get_db()
     c = conn.cursor()
-    c.execute("SELECT username FROM users WHERE id=?", (user_id,))
+    c.execute("SELECT username, role FROM users WHERE id=?", (user_id,))
     row = c.fetchone()
     if not row:
         conn.close()
         return jsonify(success=False, error="User không tồn tại"), 404
+    current_username = session.get("username")
+    # Không cho xóa tài khoản admin gốc
     if row["username"] == "admin":
         conn.close()
-        return jsonify(success=False, error="Không thể xoá admin"), 400
+        return jsonify(success=False, error="Không thể xoá tài khoản admin gốc"), 400
+    # Chỉ admin gốc mới được xóa tài khoản có role admin
+    target_role = (row["role"] or "").strip().lower() if "role" in row.keys() else ""
+    if target_role == "admin" and current_username != "admin":
+        conn.close()
+        return jsonify(success=False, error="Chỉ admin gốc mới được xoá tài khoản admin"), 403
     c.execute("DELETE FROM users WHERE id=?", (user_id,))
     conn.commit()
     conn.close()
@@ -399,12 +406,24 @@ def can_view_diem(session):
 # ================= LOGIN =================
 @app.route("/", methods=["GET","POST"])
 def login():
+    # Đọc trạng thái bảo trì từ settings
+    maintenance_enabled = get_setting("maintenance_enabled", "1") == "1"
+    maintenance_until = get_setting("maintenance_until", "20h ngày 1/3/2026")
+    maintenance_message = get_setting("maintenance_message", "trong thời gian này anh em giành thời gian cho gia đình nhé !:3")
+
     if request.method == "POST":
         u = (request.form.get("username") or "").strip()
         p = (request.form.get("password") or "").strip()
 
         if not u or not p:
-            return render_template("login.html", login_error="Vui lòng nhập đầy đủ tài khoản và mật khẩu", last_username=u)
+            return render_template(
+                "login.html",
+                login_error="Vui lòng nhập đầy đủ tài khoản và mật khẩu",
+                last_username=u,
+                maintenance_enabled=maintenance_enabled,
+                maintenance_until=maintenance_until,
+                maintenance_message=maintenance_message,
+            )
 
         conn = get_db()
         c = conn.cursor()
@@ -416,10 +435,22 @@ def login():
         conn.close()
 
         if ok:
+            # Nếu đang bảo trì: chỉ cho tài khoản admin (role admin hoặc username=admin) đăng nhập
+            user_role = ok["role"] if "role" in ok.keys() else "user"
+            is_admin_user = (user_role == "admin" or u == "admin")
+            if maintenance_enabled and not is_admin_user:
+                return render_template(
+                    "login.html",
+                    login_error="Hệ thống đang bảo trì, vui lòng quay lại sau.",
+                    last_username=u,
+                    maintenance_enabled=True,
+                    maintenance_until=maintenance_until,
+                    maintenance_message=maintenance_message,
+                )
+
             session["login"] = True
             session["username"] = u
             # Đảm bảo admin luôn có full quyền
-            user_role = ok["role"] if "role" in ok.keys() else "user"
             # Kiểm tra và đảm bảo admin có full quyền
             if user_role == "admin" or u == "admin":
                 session["role"] = "admin"
@@ -436,11 +467,30 @@ def login():
                 session.get("current_so", "TRU"),
             )
             # Render UI thành công trước rồi redirect bằng JS (mượt hơn)
-            return render_template("login.html", login_success=True, last_username=u)
+            return render_template(
+                "login.html",
+                login_success=True,
+                last_username=u,
+                maintenance_enabled=maintenance_enabled,
+                maintenance_until=maintenance_until,
+                maintenance_message=maintenance_message,
+            )
 
-        return render_template("login.html", login_error="Sai tài khoản hoặc mật khẩu", last_username=u)
+        return render_template(
+            "login.html",
+            login_error="Sai tài khoản hoặc mật khẩu",
+            last_username=u,
+            maintenance_enabled=maintenance_enabled,
+            maintenance_until=maintenance_until,
+            maintenance_message=maintenance_message,
+        )
 
-    return render_template("login.html")
+    return render_template(
+        "login.html",
+        maintenance_enabled=maintenance_enabled,
+        maintenance_until=maintenance_until,
+        maintenance_message=maintenance_message,
+    )
 
 
 @app.get("/heal")
@@ -464,6 +514,8 @@ def dashboard():
     conn = get_db()
     c = conn.cursor()
 
+    username = session.get("username")
+
     # Xác định sở hiện tại (TRU/LS) theo quyền và query param
     requested_so = request.args.get("so")
     user_role = get_user_role(session)
@@ -481,23 +533,21 @@ def dashboard():
         if chuc_vu not in ("Thực tập", "Cảnh sát viên", "Sĩ quan dự bị"):
             chuc_vu = "Thực tập"
         name = request.form.get("name", "").strip()
-        # Mặc định tất cả là 0 nếu không nhập
-        # Giao thông chỉ có với Thực tập
+        # Giao thông: Thực tập lấy từ form, Cảnh sát/Sĩ quan = 0
         if chuc_vu == "Thực tập":
             giao_thong = int(request.form.get("giao_thong", 0) or 0)
-            giam_sat = 0
         else:
             giao_thong = 0
-            giam_sat = int(request.form.get("giam_sat", 0) or 0)
+        giam_sat = 0
         xa_1_4 = int(request.form.get("xa_1_4", 0) or 0)   # hiển thị 1-5
         xa_5_6 = int(request.form.get("xa_5_6", 0) or 0)   # hiển thị 6
         an_sai = int(request.form.get("an_sai", 0) or 0)
         user_id = request.form.get("user_id", "").strip()
 
-        # Tổng = chỉ 1-5 + 6 (không giao thông, không GS, không án sai)
+        # Tổng = chỉ 1-5 + 6 (không giao thông, không án sai)
         tong_an = xa_1_4 + xa_5_6
-        # Điểm = Giao thông*1 + 1-5*2 + 6*4 + Giám sát*1 - Án sai*5
-        diem = giao_thong*1 + xa_1_4*2 + xa_5_6*4 + giam_sat*1 - an_sai*5
+        # Điểm = Giao thông*1 + 1-5*2 + 6*4 - Án sai*5
+        diem = giao_thong*1 + xa_1_4*2 + xa_5_6*4 - an_sai*5
 
         if is_postgres():
             c.execute("""
@@ -552,6 +602,7 @@ def dashboard():
     return render_template(
         "dashboard.html",
         data=data,
+        username=username,
         user_role=user_role,
         can_see_main=can_see_main,
         can_see_diem=can_see_diem,
@@ -583,7 +634,7 @@ def inline_edit():
 
     # Ép kiểu số cho các cột số - xóa hết thì mặc định 0
     saved_value = None
-    if field in ("giao_thong", "xa_1_4", "xa_5_6", "giam_sat", "an_sai"):
+    if field in ("giao_thong", "xa_1_4", "xa_5_6", "an_sai"):
         raw = (value if value is not None else "").strip() if isinstance(value, str) else value
         try:
             value = int(float(str(raw))) if raw not in ("", None) else 0
@@ -614,7 +665,7 @@ def inline_edit():
         # Nếu DB cũ chưa có cột so, bỏ qua
         pass
 
-    allowed_fields = {"chuc_vu", "name", "giao_thong", "xa_1_4", "xa_5_6", "giam_sat", "an_sai", "user_id"}
+    allowed_fields = {"chuc_vu", "name", "giao_thong", "xa_1_4", "xa_5_6", "an_sai", "user_id"}
     if field not in allowed_fields:
         conn.close()
         return jsonify(success=False, error="Trường không hợp lệ")
@@ -625,14 +676,14 @@ def inline_edit():
             conn.close()
             return jsonify(success=False, error="Chức vụ không hợp lệ")
         if value == "Thực tập":
-            c.execute("UPDATE records SET chuc_vu=?, giam_sat=0 WHERE id=?", (value, rid))
+            c.execute("UPDATE records SET chuc_vu=? WHERE id=?", (value, rid))
         else:
             c.execute("UPDATE records SET chuc_vu=?, giao_thong=0 WHERE id=?", (value, rid))
     else:
         c.execute(f"UPDATE records SET {field}=? WHERE id=?", (value, rid))
 
     c.execute(
-        "SELECT chuc_vu,giao_thong,xa_1_4,xa_5_6,giam_sat,an_sai FROM records WHERE id=?",
+        "SELECT chuc_vu,giao_thong,xa_1_4,xa_5_6,an_sai FROM records WHERE id=?",
         (rid,)
     )
     r = c.fetchone()
@@ -641,17 +692,12 @@ def inline_edit():
     giao_thong = int(r["giao_thong"] or 0)
     xa_1_4 = int(r["xa_1_4"])
     xa_5_6 = int(r["xa_5_6"])
-    if chuc_vu == "Thực tập":
-        giam_sat = 0
-        c.execute("UPDATE records SET giam_sat=0 WHERE id=?", (rid,))
-    else:
-        giam_sat = int(r["giam_sat"])
     an_sai = int(r["an_sai"])
 
-    # Tổng = chỉ 1-5 + 6 (không giao thông, không GS, không án sai)
+    # Tổng = chỉ 1-5 + 6 (không giao thông, không án sai)
     tong_an = xa_1_4 + xa_5_6
-    # Điểm = Giao thông*1 + 1-5*2 + 6*4 + Giám sát*1 - Án sai*5
-    diem = giao_thong*1 + xa_1_4*2 + xa_5_6*4 + giam_sat*1 - an_sai*5
+    # Điểm = Giao thông*1 + 1-5*2 + 6*4 - Án sai*5
+    diem = giao_thong*1 + xa_1_4*2 + xa_5_6*4 - an_sai*5
 
     c.execute(
         "UPDATE records SET tong_an=?, diem=? WHERE id=?",
@@ -663,7 +709,7 @@ def inline_edit():
     conn.commit()
     conn.close()
 
-    resp = {"success": True, "tong_an": tong_an, "diem": diem, "giao_thong": giao_thong, "giam_sat": giam_sat}
+    resp = {"success": True, "tong_an": tong_an, "diem": diem, "giao_thong": giao_thong}
     if saved_value is not None:
         resp["saved_value"] = saved_value
     return jsonify(resp)
@@ -725,6 +771,74 @@ def api_set_monthly_title():
     conn.commit()
     conn.close()
     return jsonify(success=True, title=title, so=so)
+
+
+@app.get("/api/settings/maintenance")
+def api_get_maintenance_settings():
+    """Lấy trạng thái bảo trì hệ thống (chỉ admin)."""
+    if not session.get("login") or session.get("role") != "admin":
+        return jsonify(success=False, error="Không có quyền (chỉ admin)"), 403
+
+    enabled = get_setting("maintenance_enabled", "1") == "1"
+    maintenance_until = get_setting("maintenance_until", "20h ngày 1/3/2026")
+    maintenance_message = get_setting("maintenance_message", "trong thời gian này anh em giành thời gian cho gia đình nhé !:3")
+    return jsonify(
+        success=True,
+        enabled=enabled,
+        maintenance_until=maintenance_until,
+        maintenance_message=maintenance_message,
+    )
+
+
+@app.post("/api/settings/maintenance")
+def api_set_maintenance_settings():
+    """Bật/tắt chế độ bảo trì + thời gian và lời nhắn (chỉ admin)."""
+    if not session.get("login") or session.get("role") != "admin":
+        return jsonify(success=False, error="Không có quyền (chỉ admin)"), 403
+
+    data = request.json or {}
+    enabled = bool(data.get("enabled"))
+    maintenance_until = (data.get("maintenance_until") or "").strip()
+    maintenance_message = (data.get("maintenance_message") or "").strip()
+
+    conn = get_db()
+    c = conn.cursor()
+    try:
+        c.execute(
+            "INSERT INTO settings(key,value) VALUES(?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            ("maintenance_enabled", "1" if enabled else "0"),
+        )
+        c.execute(
+            "INSERT INTO settings(key,value) VALUES(?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            ("maintenance_until", maintenance_until),
+        )
+        c.execute(
+            "INSERT INTO settings(key,value) VALUES(?,?) "
+            "ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+            ("maintenance_message", maintenance_message),
+        )
+        write_log(
+            c,
+            "MAINTENANCE_TOGGLE",
+            None,
+            session.get("username", "Admin"),
+            f"Bảo trì: {'ON' if enabled else 'OFF'}; until={maintenance_until}; msg={maintenance_message}",
+        )
+        conn.commit()
+    except Exception as e:
+        conn.rollback()
+        conn.close()
+        return jsonify(success=False, error=str(e)), 500
+    conn.close()
+
+    return jsonify(
+        success=True,
+        enabled=enabled,
+        maintenance_until=maintenance_until,
+        maintenance_message=maintenance_message,
+    )
 
 
 @app.post("/api/settings/stats")

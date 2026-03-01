@@ -10,7 +10,7 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 </head>
 
-<body>
+<body data-can-see-main="{{ 1 if can_see_main else 0 }}" data-is-root-admin="{{ 1 if username == 'admin' else 0 }}">
 
 <div class="page-enter app">
 
@@ -53,6 +53,7 @@
         <button class="tab-btn {% if not can_see_main and not can_see_diem %}active{% endif %}" onclick="switchTab('thongke')">Thống kê</button>
         {% if user_role == 'admin' %}
         <button class="tab-btn" onclick="switchTab('manage')">Manage</button>
+        <button class="tab-btn" onclick="switchTab('admin')">ADMIN</button>
         {% endif %}
         {% if can_see_logs %}
         <button class="tab-btn" onclick="switchTab('nhatky')">Nhật ký</button>
@@ -95,11 +96,6 @@
                         <input type="number" name="xa_5_6" placeholder="0" value="0">
                     </div>
                     
-                    <div class="form-group" id="giam_sat_group">
-                        <label>Giám sát</label>
-                        <input type="number" name="giam_sat" id="giam_sat_input" placeholder="0" value="0">
-                    </div>
-                    
                     <div class="form-group">
                         <label>Án sai</label>
                         <input type="number" name="an_sai" placeholder="0" value="0">
@@ -127,7 +123,6 @@
                         <th>Giao thông</th>
                         <th>Án hình sự khoản 1-5</th>
                         <th>Án hình sự khoản 6</th>
-                        <th>Giám sát</th>
                         <th>Án sai</th>
                         <th>Tổng</th>
                         <th>Điểm</th>
@@ -152,9 +147,6 @@
                             >{{r.giao_thong or 0}}</td>
                         <td contenteditable onblur="edit({{r.id}},'xa_1_4',this)">{{r.xa_1_4}}</td>
                         <td contenteditable onblur="edit({{r.id}},'xa_5_6',this)">{{r.xa_5_6}}</td>
-                        <td class="giam-sat-cell" data-chuc-vu="{{r.chuc_vu}}" data-id="{{r.id}}"
-                            {% if r.chuc_vu == 'Thực tập' %}contenteditable="false" style="opacity:0.6;cursor:not-allowed"{% else %}contenteditable onblur="edit({{r.id}},'giam_sat',this)"{% endif %}
-                            >{% if r.chuc_vu == 'Thực tập' %}X{% else %}{{r.giam_sat}}{% endif %}</td>
                         <td contenteditable onblur="edit({{r.id}},'an_sai',this)">{{r.an_sai}}</td>
                         {% else %}
                         <td>{{r.chuc_vu}}</td>
@@ -162,7 +154,6 @@
                         <td>{{r.giao_thong or 0}}</td>
                         <td>{{r.xa_1_4}}</td>
                         <td>{{r.xa_5_6}}</td>
-                        <td>{% if r.chuc_vu == 'Thực tập' %}X{% else %}{{r.giam_sat}}{% endif %}</td>
                         <td>{{r.an_sai}}</td>
                         {% endif %}
                         <td class="muted tong_an">{{r.tong_an}}</td>
@@ -235,7 +226,6 @@
                                 <th>Giao thông</th>
                                 <th>Án hình sự khoản 1-5</th>
                                 <th>Án hình sự khoản 6</th>
-                                <th>Giám sát</th>
                                 <th>Án sai</th>
                                 <th>Tổng</th>
                                 <th>Điểm</th>
@@ -249,7 +239,6 @@
                                 <td>{{ r.giao_thong or 0 }}</td>
                                 <td>{{ r.xa_1_4 }}</td>
                                 <td>{{ r.xa_5_6 }}</td>
-                                <td>{% if r.chuc_vu == 'Thực tập' %}X{% else %}{{ r.giam_sat }}{% endif %}</td>
                                 <td>{{ r.an_sai }}</td>
                                 <td class="muted">{{ r.tong_an }}</td>
                                 <td class="strong">{{ r.diem }}</td>
@@ -284,10 +273,6 @@
                             <div class="diem-row">
                                 <span class="diem-label">Án hình sự khoản 6</span>
                                 <span class="diem-val">{{r.xa_5_6}}</span>
-                            </div>
-                            <div class="diem-row">
-                                <span class="diem-label">Giám sát</span>
-                                <span class="diem-val">{% if r.chuc_vu == 'Thực tập' %}—{% else %}{{r.giam_sat}}{% endif %}</span>
                             </div>
                             <div class="diem-row">
                                 <span class="diem-label">Án sai</span>
@@ -381,6 +366,53 @@
                             </tbody>
                         </table>
                     </div>
+                </div>
+            </div>
+        </section>
+    </div>
+    {% endif %}
+
+    <!-- ===== Tab ADMIN (bảo trì hệ thống, chỉ admin) ===== -->
+    {% if user_role == 'admin' %}
+    <div id="tab-admin" class="tab-content">
+        <section class="card admin-maint-card">
+            <div class="admin-maint-header">
+                <div>
+                    <h2>Chế độ bảo trì hệ thống</h2>
+                    <p class="muted">Bật/tắt trạng thái cập nhật web. Khi bật, trang đăng nhập sẽ khoá lại và hiện thông báo siêu đẹp.</p>
+                </div>
+                <div class="admin-maint-status">
+                    <span class="status-dot" id="maintenance-dot"></span>
+                    <span id="maintenance-status-text" class="status-label">Đang tải...</span>
+                </div>
+            </div>
+
+            <div class="admin-maint-body">
+                <div class="admin-maint-left">
+                    <button type="button" class="maintenance-toggle-btn" id="maintenance-toggle-btn" onclick="toggleMaintenanceMode()">
+                        <span class="toggle-pill">
+                            <span class="toggle-circle"></span>
+                        </span>
+                        <span class="toggle-labels">
+                            <span class="toggle-label-on">ĐANG BẢO TRÌ</span>
+                            <span class="toggle-label-off">ĐANG HOẠT ĐỘNG</span>
+                        </span>
+                    </button>
+                    <div class="toggle-help muted">
+                        Chỉ admin sử dụng. Sau khi bật, vui lòng thông báo thời gian dự kiến hoàn tất cho mọi người.
+                    </div>
+                </div>
+
+                <div class="admin-maint-right">
+                    <div class="form-group">
+                        <label>Thời gian dự kiến hoàn thành</label>
+                        <input type="text" id="maintenance_until_input" placeholder="VD: 22:30 ngày 01/03/2026">
+                    </div>
+                    <div class="form-group">
+                        <label>Lời nhắn hiển thị ở trang đăng nhập</label>
+                        <input type="text" id="maintenance_message_input" placeholder="VD: Đang cập nhật dữ liệu, vui lòng quay lại sau ít phút.">
+                    </div>
+                    <div id="maintenance-result" class="result-message" style="margin-top:10px;"></div>
                 </div>
             </div>
         </section>
@@ -483,38 +515,22 @@
 <script>
 let chart = null;
 let chartType = 'bar'; // 'bar' hoặc 'line'
+const IS_ROOT_ADMIN = document.body && document.body.dataset && document.body.dataset.isRootAdmin === "1";
 
-// Toggle Giao thông + Giám sát theo chức vụ (form thêm mới)
+// Toggle Giao thông theo chức vụ (form thêm mới): Thực tập có Giao thông, Cảnh sát/Sĩ quan = 0
 function toggleRoleFields() {
     const chucVuSelect = document.getElementById('chuc_vu_select');
-    const giamSatInput = document.getElementById('giam_sat_input');
     const giaoThongInput = document.getElementById('giao_thong_input');
     const giaoThongGroup = document.getElementById('giao_thong_group');
-    const giamSatGroup = document.getElementById('giam_sat_group');
-    
-    // Thực tập: có Giao thông, không có Giám sát
-    // Cảnh sát viên / Sĩ quan dự bị: có cả Giao thông + Giám sát
+    if (!chucVuSelect || !giaoThongInput || !giaoThongGroup) return;
     if (chucVuSelect.value === 'Thực tập') {
-        // Hiện Giao thông, ẩn Giám sát
         giaoThongGroup.style.display = 'block';
         giaoThongInput.disabled = false;
-        giaoThongInput.placeholder = '0';
-        giaoThongInput.style.opacity = '1';
-        giaoThongInput.style.cursor = 'text';
-        giamSatGroup.style.display = 'none';
-        giamSatInput.value = 0;
+        giaoThongInput.value = 0;
     } else {
-        // Hiện cả Giao thông + Giám sát
         giaoThongGroup.style.display = 'block';
         giaoThongInput.disabled = false;
-        giaoThongInput.placeholder = '0';
-        giaoThongInput.style.opacity = '1';
-        giaoThongInput.style.cursor = 'text';
-        giamSatGroup.style.display = 'block';
-        giamSatInput.disabled = false;
-        giamSatInput.placeholder = '0';
-        giamSatInput.style.opacity = '1';
-        giamSatInput.style.cursor = 'text';
+        giaoThongInput.value = 0;
     }
 }
 
@@ -625,34 +641,10 @@ function editChucVu(id, value) {
                 tr.querySelector(".tong_an").innerText = d.tong_an;
                 tr.querySelector(".diem").innerText = d.diem;
                 const gtCell = tr.querySelector(".giao-thong-cell");
-                const gsCell = tr.querySelector(".giam-sat-cell");
-                if (value === 'Thực tập') {
-                    // Thực tập: có Giao thông, không có Giám sát
-                    gtCell.setAttribute('contenteditable', 'true');
-                    gtCell.style.opacity = '1';
-                    gtCell.style.cursor = 'text';
-                    gtCell.innerText = d.giao_thong ?? 0;
-                    gtCell.setAttribute('data-chuc-vu', 'Thực tập');
-                    gtCell.onblur = () => edit(id, 'giao_thong', gtCell);
-                    gsCell.setAttribute('contenteditable', 'false');
-                    gsCell.style.opacity = '0.6';
-                    gsCell.style.cursor = 'not-allowed';
-                    gsCell.innerText = 'X';
-                    gsCell.setAttribute('data-chuc-vu', 'Thực tập');
-                } else {
-                    // Cảnh sát viên / Sĩ quan dự bị: có Giao thông và Giám sát
-                    gtCell.setAttribute('contenteditable', 'true');
-                    gtCell.style.opacity = '1';
-                    gtCell.style.cursor = 'text';
+                if (gtCell) {
                     gtCell.innerText = d.giao_thong ?? 0;
                     gtCell.setAttribute('data-chuc-vu', value);
                     gtCell.onblur = () => edit(id, 'giao_thong', gtCell);
-                    gsCell.setAttribute('contenteditable', 'true');
-                    gsCell.style.opacity = '1';
-                    gsCell.style.cursor = 'text';
-                    gsCell.innerText = d.giam_sat ?? 0;
-                    gsCell.setAttribute('data-chuc-vu', value);
-                    gsCell.onblur = () => edit(id, 'giam_sat', gsCell);
                 }
             }
         }
@@ -717,6 +709,7 @@ function switchTab(tabName) {
            (tabName === 'diem' && btnText === 'Điểm') ||
            (tabName === 'thongke' && btnText === 'Thống kê') ||
            (tabName === 'manage' && btnText === 'Manage') ||
+           (tabName === 'admin' && btnText === 'ADMIN') ||
            (tabName === 'nhatky' && btnText === 'Nhật ký')) {
             btn.classList.add('active');
         }
@@ -727,17 +720,22 @@ function switchTab(tabName) {
         loadStatistics();
         loadTopScores();
     }
+
+    // Nếu là tab ADMIN, load trạng thái bảo trì
+    if (tabName === 'admin') {
+        loadMaintenanceSettings();
+    }
 }
 
 // (đã bỏ discord_id) user_id nhập tay
 
 // Tự động load thống kê nếu user chỉ có quyền xem thống kê
-{% if not can_see_main %}
-document.addEventListener('DOMContentLoaded', function() {
-    loadStatistics();
-    loadTopScores();
-});
-{% endif %}
+if (document.body && document.body.dataset && document.body.dataset.canSeeMain === "0") {
+    document.addEventListener('DOMContentLoaded', function() {
+        loadStatistics();
+        loadTopScores();
+    });
+}
 
 // Load statistics chart
 function loadStatistics() {
@@ -967,7 +965,7 @@ async function loadUsers() {
                     </select>
                 </td>
                 <td>
-                    ${u.role==='admin' ? '' : `<button class="btn-toggle" onclick="deleteUser(${u.id})">Xóa</button>`}
+                    ${u.role==='admin' && !IS_ROOT_ADMIN ? '' : `<button class="btn-toggle" onclick="deleteUser(${u.id})">Xóa</button>`}
                 </td>
             </tr>
         `).join('');
@@ -1000,6 +998,104 @@ async function deleteUser(id){
 document.addEventListener('DOMContentLoaded', function(){
     loadUsers();
 });
+
+// ====== ADMIN: Bảo trì hệ thống ======
+let maintenanceState = {
+    enabled: false,
+    maintenance_until: '',
+    maintenance_message: ''
+};
+
+async function loadMaintenanceSettings() {
+    const dot = document.getElementById('maintenance-dot');
+    const label = document.getElementById('maintenance-status-text');
+    const untilInput = document.getElementById('maintenance_until_input');
+    const msgInput = document.getElementById('maintenance_message_input');
+    const result = document.getElementById('maintenance-result');
+
+    if (result) {
+        result.innerHTML = '';
+    }
+
+    try {
+        const res = await fetch('/api/settings/maintenance');
+        const data = await res.json();
+        if (!data.success) {
+            if (label) label.innerText = data.error || 'Không thể tải trạng thái';
+            return;
+        }
+        maintenanceState.enabled = !!data.enabled;
+        maintenanceState.maintenance_until = data.maintenance_until || '';
+        maintenanceState.maintenance_message = data.maintenance_message || '';
+
+        if (untilInput) untilInput.value = maintenanceState.maintenance_until;
+        if (msgInput) msgInput.value = maintenanceState.maintenance_message;
+        updateMaintenanceUI();
+    } catch (e) {
+        if (label) label.innerText = 'Lỗi khi tải trạng thái';
+        console.error(e);
+    }
+}
+
+function updateMaintenanceUI() {
+    const dot = document.getElementById('maintenance-dot');
+    const label = document.getElementById('maintenance-status-text');
+    const btn = document.getElementById('maintenance-toggle-btn');
+
+    if (!dot || !label || !btn) return;
+
+    if (maintenanceState.enabled) {
+        dot.classList.add('on');
+        btn.classList.add('on');
+        label.innerText = 'ĐANG BẢO TRÌ';
+    } else {
+        dot.classList.remove('on');
+        btn.classList.remove('on');
+        label.innerText = 'ĐANG HOẠT ĐỘNG BÌNH THƯỜNG';
+    }
+}
+
+async function toggleMaintenanceMode() {
+    const untilInput = document.getElementById('maintenance_until_input');
+    const msgInput = document.getElementById('maintenance_message_input');
+    const result = document.getElementById('maintenance-result');
+
+    const nextEnabled = !maintenanceState.enabled;
+    const payload = {
+        enabled: nextEnabled,
+        maintenance_until: untilInput ? untilInput.value.trim() : '',
+        maintenance_message: msgInput ? msgInput.value.trim() : ''
+    };
+
+    try {
+        const res = await fetch('/api/settings/maintenance', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!data.success) {
+            if (result) {
+                result.innerHTML = `<div style="color:#ef4444;">❌ ${data.error || 'Không thể lưu cấu hình'}</div>`;
+            }
+            return;
+        }
+        maintenanceState.enabled = !!data.enabled;
+        maintenanceState.maintenance_until = data.maintenance_until || '';
+        maintenanceState.maintenance_message = data.maintenance_message || '';
+        if (untilInput) untilInput.value = maintenanceState.maintenance_until;
+        if (msgInput) msgInput.value = maintenanceState.maintenance_message;
+        if (result) {
+            result.innerHTML = `<div style="color:#10b981;">✅ Đã ${maintenanceState.enabled ? 'bật' : 'tắt'} chế độ bảo trì</div>`;
+        }
+        updateMaintenanceUI();
+    } catch (e) {
+        console.error(e);
+        if (result) {
+            result.innerHTML = `<div style="color:#ef4444;">❌ Lỗi: ${e.message}</div>`;
+        }
+    }
+}
 </script>
 
 </body>
