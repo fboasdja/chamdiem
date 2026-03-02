@@ -36,7 +36,7 @@
                 Sở LS
             </button>
             {% endif %}
-            {% if user_role == 'admin' %}
+            {% if username == 'admin' %}
             <button class="side-so-btn" onclick="openHealTab()">Heal</button>
             {% endif %}
         </aside>
@@ -53,7 +53,6 @@
         <button class="tab-btn {% if not can_see_main and not can_see_diem %}active{% endif %}" onclick="switchTab('thongke')">Thống kê</button>
         {% if user_role == 'admin' %}
         <button class="tab-btn" onclick="switchTab('manage')">Manage</button>
-        <button class="tab-btn" onclick="switchTab('admin')">ADMIN</button>
         {% endif %}
         {% if can_see_logs %}
         <button class="tab-btn" onclick="switchTab('nhatky')">Nhật ký</button>
@@ -63,6 +62,15 @@
     <!-- ===== Tab Main ===== -->
     {% if can_see_main %}
     <div id="tab-main" class="tab-content {% if can_see_main %}active{% endif %}">
+        {% if user_role in ['admin', 'editer'] %}
+        <section class="card">
+            <div class="chart-controls">
+                <button type="button" class="btn-toggle" onclick="resetScoresMain()">Reset điểm</button>
+                <button type="button" class="btn-toggle" onclick="resetAllMain()">Reset all</button>
+            </div>
+        </section>
+        {% endif %}
+
         <!-- ===== Add row ===== -->
         <section class="card">
             <form method="post" class="add-row-responsive" id="add-form">
@@ -95,15 +103,20 @@
                         <label>Án hình sự khoản 6</label>
                         <input type="number" name="xa_5_6" placeholder="0" value="0">
                     </div>
+
+                    <div class="form-group" id="giam_sat_1_5_group">
+                        <label>Giám sát án 1-5</label>
+                        <input type="number" name="giam_sat_1_5" id="giam_sat_1_5_input" placeholder="0" value="0">
+                    </div>
+
+                    <div class="form-group" id="giam_sat_6_group">
+                        <label>Giám sát án 6</label>
+                        <input type="number" name="giam_sat_6" id="giam_sat_6_input" placeholder="0" value="0">
+                    </div>
                     
                     <div class="form-group">
                         <label>Án sai</label>
                         <input type="number" name="an_sai" placeholder="0" value="0">
-                    </div>
-                    
-                    <div class="form-group full-width">
-                        <label>User ID</label>
-                        <input type="text" name="user_id" id="user_id_input" placeholder="Nhập User ID (tự điền bằng tay)">
                     </div>
                     
                     <div class="form-group full-width">
@@ -123,10 +136,11 @@
                         <th>Giao thông</th>
                         <th>Án hình sự khoản 1-5</th>
                         <th>Án hình sự khoản 6</th>
+                        <th>Giám sát án 1-5</th>
+                        <th>Giám sát án 6</th>
                         <th>Án sai</th>
                         <th>Tổng</th>
                         <th>Điểm</th>
-                        <th>User ID</th>
                         <th></th>
                     </tr>
                 </thead>
@@ -147,6 +161,13 @@
                             >{{r.giao_thong or 0}}</td>
                         <td contenteditable onblur="edit({{r.id}},'xa_1_4',this)">{{r.xa_1_4}}</td>
                         <td contenteditable onblur="edit({{r.id}},'xa_5_6',this)">{{r.xa_5_6}}</td>
+                        {% if r.chuc_vu == 'Thực tập' %}
+                        <td class="giam-sat-1-5-cell" data-id="{{r.id}}" contenteditable="false">X</td>
+                        <td class="giam-sat-6-cell" data-id="{{r.id}}" contenteditable="false">X</td>
+                        {% else %}
+                        <td class="giam-sat-1-5-cell" data-id="{{r.id}}" contenteditable onblur="edit({{r.id}},'giam_sat_1_5',this)">{{r.giam_sat_1_5 or 0}}</td>
+                        <td class="giam-sat-6-cell" data-id="{{r.id}}" contenteditable onblur="edit({{r.id}},'giam_sat_6',this)">{{r.giam_sat_6 or 0}}</td>
+                        {% endif %}
                         <td contenteditable onblur="edit({{r.id}},'an_sai',this)">{{r.an_sai}}</td>
                         {% else %}
                         <td>{{r.chuc_vu}}</td>
@@ -154,11 +175,12 @@
                         <td>{{r.giao_thong or 0}}</td>
                         <td>{{r.xa_1_4}}</td>
                         <td>{{r.xa_5_6}}</td>
+                        <td>{% if r.chuc_vu == 'Thực tập' %}X{% else %}{{r.giam_sat_1_5 or 0}}{% endif %}</td>
+                        <td>{% if r.chuc_vu == 'Thực tập' %}X{% else %}{{r.giam_sat_6 or 0}}{% endif %}</td>
                         <td>{{r.an_sai}}</td>
                         {% endif %}
                         <td class="muted tong_an">{{r.tong_an}}</td>
                         <td class="strong diem">{{r.diem}}</td>
-                        <td class="muted">{{r.user_id or '-'}}</td>
                         {% if user_role in ['admin', 'editer'] %}
                         <td><a href="/delete/{{r.id}}" class="del">×</a></td>
                         {% else %}
@@ -172,7 +194,8 @@
     </div>
     {% endif %}
 
-    <!-- ===== Tab Heal ===== -->
+    <!-- ===== Tab Heal (chỉ admin gốc) ===== -->
+    {% if username == 'admin' %}
     <div id="tab-heal" class="tab-content">
         <section class="card">
             <h2>Heal</h2>
@@ -193,6 +216,7 @@
             </div>
         </section>
     </div>
+    {% endif %}
 
     <!-- ===== Tab Điểm (user, editer, admin - chỉ xem) ===== -->
     {% if can_see_diem %}
@@ -325,14 +349,14 @@
                         </div>
                         <div class="form-row">
                             <div class="input-group-full">
-                                <select id="new_role" required>
+                                <select id="new_role" required onchange="toggleCreateAccountSo()">
                                     <option value="user">user</option>
                                     <option value="editer">editer</option>
                                     <option value="admin">admin</option>
                                 </select>
                             </div>
                         </div>
-                        <div class="form-row">
+                        <div class="form-row" id="new_so_row">
                             <div class="input-group-full">
                                 <select id="new_so" required>
                                     <option value="TRU">Sở TRU</option>
@@ -366,53 +390,6 @@
                             </tbody>
                         </table>
                     </div>
-                </div>
-            </div>
-        </section>
-    </div>
-    {% endif %}
-
-    <!-- ===== Tab ADMIN (bảo trì hệ thống, chỉ admin) ===== -->
-    {% if user_role == 'admin' %}
-    <div id="tab-admin" class="tab-content">
-        <section class="card admin-maint-card">
-            <div class="admin-maint-header">
-                <div>
-                    <h2>Chế độ bảo trì hệ thống</h2>
-                    <p class="muted">Bật/tắt trạng thái cập nhật web. Khi bật, trang đăng nhập sẽ khoá lại và hiện thông báo siêu đẹp.</p>
-                </div>
-                <div class="admin-maint-status">
-                    <span class="status-dot" id="maintenance-dot"></span>
-                    <span id="maintenance-status-text" class="status-label">Đang tải...</span>
-                </div>
-            </div>
-
-            <div class="admin-maint-body">
-                <div class="admin-maint-left">
-                    <button type="button" class="maintenance-toggle-btn" id="maintenance-toggle-btn" onclick="toggleMaintenanceMode()">
-                        <span class="toggle-pill">
-                            <span class="toggle-circle"></span>
-                        </span>
-                        <span class="toggle-labels">
-                            <span class="toggle-label-on">ĐANG BẢO TRÌ</span>
-                            <span class="toggle-label-off">ĐANG HOẠT ĐỘNG</span>
-                        </span>
-                    </button>
-                    <div class="toggle-help muted">
-                        Chỉ admin sử dụng. Sau khi bật, vui lòng thông báo thời gian dự kiến hoàn tất cho mọi người.
-                    </div>
-                </div>
-
-                <div class="admin-maint-right">
-                    <div class="form-group">
-                        <label>Thời gian dự kiến hoàn thành</label>
-                        <input type="text" id="maintenance_until_input" placeholder="VD: 22:30 ngày 01/03/2026">
-                    </div>
-                    <div class="form-group">
-                        <label>Lời nhắn hiển thị ở trang đăng nhập</label>
-                        <input type="text" id="maintenance_message_input" placeholder="VD: Đang cập nhật dữ liệu, vui lòng quay lại sau ít phút.">
-                    </div>
-                    <div id="maintenance-result" class="result-message" style="margin-top:10px;"></div>
                 </div>
             </div>
         </section>
@@ -471,7 +448,10 @@
     {% if can_see_logs %}
     <div id="tab-nhatky" class="tab-content">
         <section class="card">
-            <h2>Nhật ký hoạt động</h2>
+            <div class="nhatky-head">
+                <h2>Nhật ký hoạt động</h2>
+                <button class="btn-toggle" onclick="loadLogs(1)">Tải lại</button>
+            </div>
             <div class="nhatky-container">
                 <table class="nhatky-table">
                     <thead>
@@ -482,29 +462,17 @@
                             <th>Chi tiết</th>
                         </tr>
                     </thead>
-                    <tbody>
-                        {% for log in nhat_ky %}
+                    <tbody id="nhatky-body">
                         <tr>
-                            <td>{{log.time}}</td>
-                            <td><strong>{{log.user_name}}</strong></td>
-                            <td>
-                                {% if log.action == 'ADD' %}
-                                    <span style="color: #60a5fa;">➕ Thêm</span>
-                                {% elif log.action == 'INLINE_EDIT' %}
-                                    <span style="color: #fbbf24;">✏️ Chỉnh sửa</span>
-                                {% elif log.action == 'DELETE' %}
-                                    <span style="color: #ef4444;">🗑️ Xóa</span>
-                                {% elif log.action == 'CREATE_ACCOUNT' %}
-                                    <span style="color: #10b981;">👤 Tạo tài khoản</span>
-                                {% else %}
-                                    {{log.action}}
-                                {% endif %}
-                            </td>
-                            <td>{{log.details}}</td>
+                            <td colspan="4" style="text-align:center;color:#9ca3af;">Đang tải...</td>
                         </tr>
-                        {% endfor %}
                     </tbody>
                 </table>
+            </div>
+            <div class="nhatky-pager">
+                <button type="button" class="btn-toggle" id="logs-prev-btn" onclick="changeLogsPage(-1)">Trang trước</button>
+                <span id="logs-page-info" class="muted">Trang 1/1</span>
+                <button type="button" class="btn-toggle" id="logs-next-btn" onclick="changeLogsPage(1)">Trang sau</button>
             </div>
         </section>
     </div>
@@ -515,22 +483,37 @@
 <script>
 let chart = null;
 let chartType = 'bar'; // 'bar' hoặc 'line'
-const IS_ROOT_ADMIN = document.body && document.body.dataset && document.body.dataset.isRootAdmin === "1";
+let logsPageState = { page: 1, totalPages: 1 };
 
-// Toggle Giao thông theo chức vụ (form thêm mới): Thực tập có Giao thông, Cảnh sát/Sĩ quan = 0
+// Toggle field theo chức vụ:
+// - Thực tập: có Giao thông, Giám sát hiển thị X
+// - Cảnh sát/Sĩ quan: có Giám sát, Giao thông = 0
 function toggleRoleFields() {
     const chucVuSelect = document.getElementById('chuc_vu_select');
     const giaoThongInput = document.getElementById('giao_thong_input');
     const giaoThongGroup = document.getElementById('giao_thong_group');
-    if (!chucVuSelect || !giaoThongInput || !giaoThongGroup) return;
+    const giamSat15Input = document.getElementById('giam_sat_1_5_input');
+    const giamSat6Input = document.getElementById('giam_sat_6_input');
+    const giamSat15Group = document.getElementById('giam_sat_1_5_group');
+    const giamSat6Group = document.getElementById('giam_sat_6_group');
+    if (!chucVuSelect || !giaoThongInput || !giaoThongGroup || !giamSat15Input || !giamSat6Input || !giamSat15Group || !giamSat6Group) return;
     if (chucVuSelect.value === 'Thực tập') {
         giaoThongGroup.style.display = 'block';
         giaoThongInput.disabled = false;
-        giaoThongInput.value = 0;
+        giamSat15Group.style.display = 'none';
+        giamSat6Group.style.display = 'none';
+        giamSat15Input.value = 0;
+        giamSat6Input.value = 0;
+        giamSat15Input.disabled = true;
+        giamSat6Input.disabled = true;
     } else {
-        giaoThongGroup.style.display = 'block';
-        giaoThongInput.disabled = false;
+        giaoThongGroup.style.display = 'none';
+        giaoThongInput.disabled = true;
         giaoThongInput.value = 0;
+        giamSat15Group.style.display = 'block';
+        giamSat6Group.style.display = 'block';
+        giamSat15Input.disabled = false;
+        giamSat6Input.disabled = false;
     }
 }
 
@@ -641,10 +624,36 @@ function editChucVu(id, value) {
                 tr.querySelector(".tong_an").innerText = d.tong_an;
                 tr.querySelector(".diem").innerText = d.diem;
                 const gtCell = tr.querySelector(".giao-thong-cell");
+                const gs15Cell = tr.querySelector(".giam-sat-1-5-cell");
+                const gs6Cell = tr.querySelector(".giam-sat-6-cell");
                 if (gtCell) {
                     gtCell.innerText = d.giao_thong ?? 0;
                     gtCell.setAttribute('data-chuc-vu', value);
                     gtCell.onblur = () => edit(id, 'giao_thong', gtCell);
+                    gtCell.setAttribute('contenteditable', value === 'Thực tập' ? 'true' : 'false');
+                    if (value !== 'Thực tập') {
+                        gtCell.innerText = '0';
+                    }
+                }
+                if (gs15Cell) {
+                    if (value === 'Thực tập') {
+                        gs15Cell.innerText = 'X';
+                        gs15Cell.setAttribute('contenteditable', 'false');
+                    } else {
+                        gs15Cell.innerText = d.giam_sat_1_5 ?? 0;
+                        gs15Cell.setAttribute('contenteditable', 'true');
+                        gs15Cell.onblur = () => edit(id, 'giam_sat_1_5', gs15Cell);
+                    }
+                }
+                if (gs6Cell) {
+                    if (value === 'Thực tập') {
+                        gs6Cell.innerText = 'X';
+                        gs6Cell.setAttribute('contenteditable', 'false');
+                    } else {
+                        gs6Cell.innerText = d.giam_sat_6 ?? 0;
+                        gs6Cell.setAttribute('contenteditable', 'true');
+                        gs6Cell.onblur = () => edit(id, 'giam_sat_6', gs6Cell);
+                    }
                 }
             }
         }
@@ -709,7 +718,6 @@ function switchTab(tabName) {
            (tabName === 'diem' && btnText === 'Điểm') ||
            (tabName === 'thongke' && btnText === 'Thống kê') ||
            (tabName === 'manage' && btnText === 'Manage') ||
-           (tabName === 'admin' && btnText === 'ADMIN') ||
            (tabName === 'nhatky' && btnText === 'Nhật ký')) {
             btn.classList.add('active');
         }
@@ -720,14 +728,148 @@ function switchTab(tabName) {
         loadStatistics();
         loadTopScores();
     }
+    if(tabName === 'nhatky') {
+        loadLogs(logsPageState.page || 1);
+    }
 
-    // Nếu là tab ADMIN, load trạng thái bảo trì
-    if (tabName === 'admin') {
-        loadMaintenanceSettings();
+}
+
+function showMainToast(message, kind = 'success') {
+    const toast = document.createElement('div');
+    toast.className = `main-toast ${kind}`;
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('show'));
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 220);
+    }, 2400);
+}
+
+function showMainConfirm(title, message, confirmText = 'Xác nhận', danger = false) {
+    return new Promise((resolve) => {
+        const overlay = document.createElement('div');
+        overlay.className = 'main-confirm-overlay';
+        overlay.innerHTML = `
+            <div class="main-confirm-box">
+                <h3>${title}</h3>
+                <p>${message}</p>
+                <div class="main-confirm-actions">
+                    <button type="button" class="btn-toggle" data-cancel>Hủy</button>
+                    <button type="button" class="btn-toggle ${danger ? 'danger' : 'ok'}" data-confirm>${confirmText}</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(overlay);
+        const close = (ok) => {
+            overlay.remove();
+            resolve(ok);
+        };
+        overlay.querySelector('[data-cancel]')?.addEventListener('click', () => close(false));
+        overlay.querySelector('[data-confirm]')?.addEventListener('click', () => close(true));
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) close(false);
+        });
+    });
+}
+
+async function resetScoresMain() {
+    const ok = await showMainConfirm(
+        'Reset điểm',
+        'Sẽ đưa toàn bộ điểm và số liệu về 0 ở Sở hiện tại. Thao tác này chỉ cập nhật dữ liệu hiện có, không tạo bản copy.',
+        'Reset điểm',
+        false
+    );
+    if (!ok) return;
+    try {
+        const r = await fetch('/api/main/reset_scores', { method: 'POST' });
+        const d = await r.json();
+        if (!d.success) {
+            showMainToast(d.error || 'Không thể reset điểm', 'error');
+            return;
+        }
+        showMainToast(`Đã reset điểm ${d.affected || 0} dòng (không tạo bản copy).`);
+        window.location.href = window.location.pathname + window.location.search;
+    } catch (e) {
+        showMainToast(`Lỗi: ${e.message}`, 'error');
     }
 }
 
-// (đã bỏ discord_id) user_id nhập tay
+async function resetAllMain() {
+    const ok = await showMainConfirm(
+        'Reset all',
+        'Sẽ xóa toàn bộ dữ liệu ở Sở hiện tại, bao gồm tên và điểm. Không thể hoàn tác.',
+        'Xóa toàn bộ',
+        true
+    );
+    if (!ok) return;
+    try {
+        const r = await fetch('/api/main/reset_all', { method: 'POST' });
+        const d = await r.json();
+        if (!d.success) {
+            showMainToast(d.error || 'Không thể reset all', 'error');
+            return;
+        }
+        showMainToast(`Đã xóa ${d.affected || 0} dòng dữ liệu.`);
+        window.location.href = window.location.pathname + window.location.search;
+    } catch (e) {
+        showMainToast(`Lỗi: ${e.message}`, 'error');
+    }
+}
+
+function logActionBadge(action) {
+    if (action === 'ADD') return '<span class="log-badge add">➕ Thêm</span>';
+    if (action === 'INLINE_EDIT') return '<span class="log-badge edit">✏️ Chỉnh sửa</span>';
+    if (action === 'DELETE') return '<span class="log-badge del">🗑️ Xóa</span>';
+    if (action === 'CREATE_ACCOUNT') return '<span class="log-badge account">👤 Tạo tài khoản</span>';
+    if (action === 'RESET_SCORES') return '<span class="log-badge reset">🔄 Reset điểm</span>';
+    if (action === 'RESET_ALL') return '<span class="log-badge reset-all">🧹 Reset all</span>';
+    return `<span class="log-badge plain">${action}</span>`;
+}
+
+async function loadLogs(page = 1) {
+    const body = document.getElementById('nhatky-body');
+    const info = document.getElementById('logs-page-info');
+    const prevBtn = document.getElementById('logs-prev-btn');
+    const nextBtn = document.getElementById('logs-next-btn');
+    if (!body || !info || !prevBtn || !nextBtn) return;
+
+    body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#9ca3af;">Đang tải...</td></tr>';
+    try {
+        const r = await fetch(`/api/logs?page=${page}`);
+        const d = await r.json();
+        if (!d.success) {
+            body.innerHTML = `<tr><td colspan="4" style="text-align:center;color:#ef4444;">${d.error || 'Không thể tải nhật ký'}</td></tr>`;
+            return;
+        }
+        logsPageState.page = d.page || 1;
+        logsPageState.totalPages = d.total_pages || 1;
+        prevBtn.disabled = logsPageState.page <= 1;
+        nextBtn.disabled = logsPageState.page >= logsPageState.totalPages;
+        info.innerText = `Trang ${logsPageState.page}/${logsPageState.totalPages} • ${d.total || 0} bản ghi`;
+
+        if (!d.logs || d.logs.length === 0) {
+            body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#9ca3af;">Chưa có nhật ký</td></tr>';
+            return;
+        }
+        body.innerHTML = d.logs.map(log => `
+            <tr>
+                <td>${log.time || ''}</td>
+                <td><strong>${log.user_name || 'System'}</strong></td>
+                <td>${logActionBadge(log.action || '')}</td>
+                <td>${log.details || ''}</td>
+            </tr>
+        `).join('');
+    } catch (e) {
+        body.innerHTML = `<tr><td colspan="4" style="text-align:center;color:#ef4444;">Lỗi: ${e.message}</td></tr>`;
+    }
+}
+
+function changeLogsPage(step) {
+    const next = (logsPageState.page || 1) + step;
+    if (next < 1 || next > (logsPageState.totalPages || 1)) return;
+    loadLogs(next);
+}
 
 // Tự động load thống kê nếu user chỉ có quyền xem thống kê
 if (document.body && document.body.dataset && document.body.dataset.canSeeMain === "0") {
@@ -882,6 +1024,16 @@ function loadTopScores() {
 }
 
 // Tạo tài khoản từ dashboard
+function toggleCreateAccountSo() {
+    const roleEl = document.getElementById('new_role');
+    const soRow = document.getElementById('new_so_row');
+    const soEl = document.getElementById('new_so');
+    if (!roleEl || !soRow || !soEl) return;
+    const isAdminRole = roleEl.value === 'admin';
+    soRow.style.display = isAdminRole ? 'none' : '';
+    soEl.disabled = isAdminRole;
+}
+
 const createAccountForm = document.getElementById('createAccountForm');
 if(createAccountForm) {
     createAccountForm.addEventListener('submit', async function(e) {
@@ -889,7 +1041,7 @@ if(createAccountForm) {
         const username = document.getElementById('new_username').value.trim();
         const password = document.getElementById('new_password').value;
         const role = document.getElementById('new_role').value;
-        const so = (document.getElementById('new_so')?.value) || 'TRU';
+        const so = role === 'admin' ? 'ALL' : ((document.getElementById('new_so')?.value) || 'TRU');
         const resultDiv = document.getElementById('createAccountResult');
         
         if(!username || !password) {
@@ -926,6 +1078,7 @@ if(createAccountForm) {
                 const codeMsg = data.code ? `<br><strong>Mã đăng nhập: ${data.code}</strong>` : '';
                 resultDiv.innerHTML = `<div style="color: #10b981; padding: 12px; background: #1f2937; border-radius: 8px;">✅ ${data.message}${codeMsg}</div>`;
                 document.getElementById('createAccountForm').reset();
+                toggleCreateAccountSo();
             } else {
                 resultDiv.innerHTML = `<div style="color: #ef4444; padding: 12px; background: #1f2937; border-radius: 8px;">❌ ${data.error}</div>`;
             }
@@ -933,6 +1086,8 @@ if(createAccountForm) {
             resultDiv.innerHTML = `<div style="color: #ef4444; padding: 12px; background: #1f2937; border-radius: 8px;">❌ Lỗi: ${error.message}</div>`;
         }
     });
+
+    toggleCreateAccountSo();
 }
 
 async function loadUsers() {
@@ -960,12 +1115,13 @@ async function loadUsers() {
                 </td>
                 <td>
                     <select onchange="updateUserSo(${u.id}, this.value)" ${u.role==='admin' ? 'disabled' : ''}>
+                        <option value="ALL" ${(u.so||'TRU')==='ALL' ? 'selected' : ''}>ALL</option>
                         <option value="TRU" ${(u.so||'TRU')==='TRU' ? 'selected' : ''}>TRU</option>
                         <option value="LS" ${(u.so||'TRU')==='LS' ? 'selected' : ''}>LS</option>
                     </select>
                 </td>
                 <td>
-                    ${u.role==='admin' && !IS_ROOT_ADMIN ? '' : `<button class="btn-toggle" onclick="deleteUser(${u.id})">Xóa</button>`}
+                    ${u.username==='admin' ? '<span class="muted">Không xóa</span>' : `<button class="btn-toggle" onclick="deleteUser(${u.id})">Xóa</button>`}
                 </td>
             </tr>
         `).join('');
@@ -975,7 +1131,12 @@ async function loadUsers() {
 }
 
 async function updateUserRole(id, role){
-    await fetch(`/api/users/${id}/role`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({role})});
+    const r = await fetch(`/api/users/${id}/role`, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({role})});
+    const d = await r.json();
+    if(!d.success){
+        alert(d.error || 'Lỗi');
+    }
+    loadUsers();
 }
 
 async function updateUserSo(id, so){
@@ -983,8 +1144,8 @@ async function updateUserSo(id, so){
     const d = await r.json();
     if(!d.success){
         alert(d.error || 'Lỗi');
-        loadUsers();
     }
+    loadUsers();
 }
 
 async function deleteUser(id){
@@ -998,104 +1159,6 @@ async function deleteUser(id){
 document.addEventListener('DOMContentLoaded', function(){
     loadUsers();
 });
-
-// ====== ADMIN: Bảo trì hệ thống ======
-let maintenanceState = {
-    enabled: false,
-    maintenance_until: '',
-    maintenance_message: ''
-};
-
-async function loadMaintenanceSettings() {
-    const dot = document.getElementById('maintenance-dot');
-    const label = document.getElementById('maintenance-status-text');
-    const untilInput = document.getElementById('maintenance_until_input');
-    const msgInput = document.getElementById('maintenance_message_input');
-    const result = document.getElementById('maintenance-result');
-
-    if (result) {
-        result.innerHTML = '';
-    }
-
-    try {
-        const res = await fetch('/api/settings/maintenance');
-        const data = await res.json();
-        if (!data.success) {
-            if (label) label.innerText = data.error || 'Không thể tải trạng thái';
-            return;
-        }
-        maintenanceState.enabled = !!data.enabled;
-        maintenanceState.maintenance_until = data.maintenance_until || '';
-        maintenanceState.maintenance_message = data.maintenance_message || '';
-
-        if (untilInput) untilInput.value = maintenanceState.maintenance_until;
-        if (msgInput) msgInput.value = maintenanceState.maintenance_message;
-        updateMaintenanceUI();
-    } catch (e) {
-        if (label) label.innerText = 'Lỗi khi tải trạng thái';
-        console.error(e);
-    }
-}
-
-function updateMaintenanceUI() {
-    const dot = document.getElementById('maintenance-dot');
-    const label = document.getElementById('maintenance-status-text');
-    const btn = document.getElementById('maintenance-toggle-btn');
-
-    if (!dot || !label || !btn) return;
-
-    if (maintenanceState.enabled) {
-        dot.classList.add('on');
-        btn.classList.add('on');
-        label.innerText = 'ĐANG BẢO TRÌ';
-    } else {
-        dot.classList.remove('on');
-        btn.classList.remove('on');
-        label.innerText = 'ĐANG HOẠT ĐỘNG BÌNH THƯỜNG';
-    }
-}
-
-async function toggleMaintenanceMode() {
-    const untilInput = document.getElementById('maintenance_until_input');
-    const msgInput = document.getElementById('maintenance_message_input');
-    const result = document.getElementById('maintenance-result');
-
-    const nextEnabled = !maintenanceState.enabled;
-    const payload = {
-        enabled: nextEnabled,
-        maintenance_until: untilInput ? untilInput.value.trim() : '',
-        maintenance_message: msgInput ? msgInput.value.trim() : ''
-    };
-
-    try {
-        const res = await fetch('/api/settings/maintenance', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify(payload)
-        });
-        const data = await res.json();
-        if (!data.success) {
-            if (result) {
-                result.innerHTML = `<div style="color:#ef4444;">❌ ${data.error || 'Không thể lưu cấu hình'}</div>`;
-            }
-            return;
-        }
-        maintenanceState.enabled = !!data.enabled;
-        maintenanceState.maintenance_until = data.maintenance_until || '';
-        maintenanceState.maintenance_message = data.maintenance_message || '';
-        if (untilInput) untilInput.value = maintenanceState.maintenance_until;
-        if (msgInput) msgInput.value = maintenanceState.maintenance_message;
-        if (result) {
-            result.innerHTML = `<div style="color:#10b981;">✅ Đã ${maintenanceState.enabled ? 'bật' : 'tắt'} chế độ bảo trì</div>`;
-        }
-        updateMaintenanceUI();
-    } catch (e) {
-        console.error(e);
-        if (result) {
-            result.innerHTML = `<div style="color:#ef4444;">❌ Lỗi: ${e.message}</div>`;
-        }
-    }
-}
 </script>
 
 </body>

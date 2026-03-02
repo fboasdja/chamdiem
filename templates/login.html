@@ -36,8 +36,6 @@
                 </div>
                 {% if maintenance_message %}
                 <div class="maintenance-note">{{ maintenance_message }}</div>
-                {% else %}
-                <div class="maintenance-note">Trong thời gian này bạn không thể đăng nhập. Vui lòng quay lại sau ít phút.</div>
                 {% endif %}
                 <div class="maintenance-note" style="margin-top:10px;font-size:11px;opacity:.85;">
                     © FAK – All rights reserved.
@@ -66,6 +64,7 @@
             </div>
             {% endif %}
 
+            {% if not maintenance_enabled %}
             <form method="post" id="loginForm">
                 <div class="input-group">
                     <input type="text" name="username" id="username" required autofocus value="{{ last_username or '' }}">
@@ -78,6 +77,7 @@
                 </div>
                 <button type="submit" class="btn-primary">Đăng nhập</button>
             </form>
+            {% endif %}
     </div>
 </div>
 
@@ -103,7 +103,7 @@ if (loginError) {
   }, 50);
 }
 
-// Khi đang bảo trì thì form đã bị ẩn ở phía server, không cần xử lý JS
+// Khi update_mode đang bật thì form đã bị ẩn ở phía server
 </script>
 
 </body>

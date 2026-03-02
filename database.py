@@ -160,11 +160,12 @@ def init_db():
                 xa_1_4 INTEGER DEFAULT 0,
                 xa_5_6 INTEGER DEFAULT 0,
                 giam_sat INTEGER DEFAULT 0,
+                giam_sat_1_5 INTEGER DEFAULT 0,
+                giam_sat_6 INTEGER DEFAULT 0,
                 an_sai INTEGER DEFAULT 0,
                 tong_an INTEGER DEFAULT 0,
                 diem INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT NOW(),
-                user_id TEXT
+                created_at TIMESTAMP DEFAULT NOW()
             );
             """,
         )
@@ -220,6 +221,8 @@ def init_db():
             """,
         )
         execute(cur, "UPDATE users SET role='admin', so_allowed='ALL' WHERE username='admin';")
+        execute(cur, "ALTER TABLE records ADD COLUMN IF NOT EXISTS giam_sat_1_5 INTEGER DEFAULT 0;")
+        execute(cur, "ALTER TABLE records ADD COLUMN IF NOT EXISTS giam_sat_6 INTEGER DEFAULT 0;")
         conn.commit()
         conn.close()
         return
@@ -251,11 +254,12 @@ def init_db():
             xa_1_4 INTEGER,
             xa_5_6 INTEGER,
             giam_sat INTEGER,
+            giam_sat_1_5 INTEGER DEFAULT 0,
+            giam_sat_6 INTEGER DEFAULT 0,
             an_sai INTEGER,
             tong_an INTEGER,
             diem INTEGER,
-            created_at TEXT DEFAULT (datetime('now')),
-            user_id TEXT
+            created_at TEXT DEFAULT (datetime('now'))
         )
         """,
     )
@@ -301,6 +305,14 @@ def init_db():
         "INSERT OR IGNORE INTO users(username,password,role,so_allowed) VALUES('admin','admin','admin','ALL')",
     )
     execute(cur, "UPDATE users SET role='admin', so_allowed='ALL' WHERE username='admin'")
+    try:
+        execute(cur, "ALTER TABLE records ADD COLUMN giam_sat_1_5 INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    try:
+        execute(cur, "ALTER TABLE records ADD COLUMN giam_sat_6 INTEGER DEFAULT 0")
+    except Exception:
+        pass
     conn.commit()
     conn.close()
 
