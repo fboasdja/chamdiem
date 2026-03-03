@@ -14,14 +14,12 @@ def is_postgres() -> bool:
 
 def get_db():
     """
-    - Render/Prod: dùng Postgres từ env DATABASE_URL (psycopg2)
+    - Render/Prod: dùng Neon Postgres từ env DATABASE_URL (psycopg2)
     - Local: fallback SQLite database.db
     """
     if DATABASE_URL:
         import psycopg2
         import psycopg2.extras
-        import socket
-        from urllib.parse import urlparse, parse_qs, unquote
 
         class _AdaptRealDictCursor(psycopg2.extras.RealDictCursor):
             def execute(self, query, vars=None):
@@ -34,63 +32,12 @@ def get_db():
                     query = query.replace("?", "%s")
                 return super().executemany(query, vars_list)
 
-        # Render đôi khi không có route IPv6 -> Supabase resolve ra IPv6 sẽ lỗi "Network is unreachable".
-        # Ép ưu tiên IPv4 bằng hostaddr. Nếu cần có thể set env DATABASE_HOSTADDR=IPv4.
-        hostaddr = None
-        sslmode = None
-        try:
-            u = urlparse(DATABASE_URL)
-            if u.hostname:
-                # 1) ưu tiên env override
-                env_hostaddr = (os.environ.get("DATABASE_HOSTADDR") or "").strip()
-                if env_hostaddr:
-                    hostaddr = env_hostaddr
-                else:
-                    # 2) gethostbyname: query A record, không phụ thuộc IPv4 interface (tránh AI_ADDRCONFIG)
-                    try:
-                        hostaddr = socket.gethostbyname(u.hostname)
-                    except Exception:
-                        # 3) fallback getaddrinfo AF_INET
-                        port = u.port or 5432
-                        infos = socket.getaddrinfo(u.hostname, port, socket.AF_INET, socket.SOCK_STREAM)
-                        if infos:
-                            hostaddr = infos[0][4][0]
-            qs = parse_qs(u.query or "")
-            if "sslmode" in qs and qs["sslmode"]:
-                # lấy sslmode từ URL nhưng phải strip để tránh newline
-                sslmode = str(qs["sslmode"][0]).strip()
-                if not sslmode:
-                    sslmode = "require"
-            else:
-                sslmode = "require"
-        except Exception:
-            # fallback: dùng default behavior
-            hostaddr = None
-            sslmode = "require"
-
-        # IMPORTANT:
-        # Với URI DSN (postgresql://...), libpq có thể bỏ qua hostaddr.
-        # => Luôn parse URL và connect bằng keyword args để hostaddr (IPv4) có tác dụng.
-        u = urlparse(DATABASE_URL)
-        dbname = (u.path or "").lstrip("/") or "postgres"
-        user = unquote(u.username or "")
-        password = unquote(u.password or "")
-        host = (u.hostname or "").strip()
-        port = u.port or 5432
-
-        kwargs = {
-            "dbname": dbname,
-            "user": user,
-            "password": password,
-            "host": host,
-            "port": port,
-            "cursor_factory": _AdaptRealDictCursor,
-            "connect_timeout": 10,
-            "sslmode": (sslmode or "require").strip(),
-        }
-        if hostaddr:
-            kwargs["hostaddr"] = hostaddr
-        return psycopg2.connect(**kwargs)
+        return psycopg2.connect(
+            DATABASE_URL,
+            sslmode="require",
+            cursor_factory=_AdaptRealDictCursor,
+            connect_timeout=10,
+        )
 
     conn = sqlite3.connect("database.db", timeout=15, check_same_thread=False)
     conn.row_factory = sqlite3.Row

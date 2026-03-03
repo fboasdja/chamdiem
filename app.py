@@ -8,7 +8,7 @@ from api import api
 app = Flask(__name__)
 app.secret_key = "secret_xulyan"
 
-# DB: Render dùng Postgres (DATABASE_URL), local dùng SQLite
+# DB: Neon Postgres (DATABASE_URL) khi deploy, local dùng SQLite
 from database import get_db, init_db as init_db_shared, is_postgres
 
 # Thời gian timeout session (giây) - 1 tiếng
