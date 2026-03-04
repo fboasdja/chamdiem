@@ -901,8 +901,11 @@ def inline_edit():
         giam_sat_6 = 0
         c.execute("UPDATE records SET giam_sat_1_5=0, giam_sat_6=0, giam_sat=0 WHERE id=?", (rid,))
     else:
-        giao_thong = 0
-        c.execute("UPDATE records SET giao_thong=0 WHERE id=?", (rid,))
+        # Chỉ tự động ép giao thông về 0 khi KHÔNG phải đang sửa trực tiếp cột giao_thong.
+        # Khi người dùng sửa giao_thong, ta cho phép điểm cập nhật theo giá trị mới.
+        if field != "giao_thong":
+            giao_thong = 0
+            c.execute("UPDATE records SET giao_thong=0 WHERE id=?", (rid,))
 
     # Tổng = trừ giao thông (chỉ đếm án: án 1-5 + án 6 + giám sát 1-5 + giám sát 6), 1 án = 1
     tong_an = xa_1_4 + xa_5_6 + giam_sat_1_5 + giam_sat_6
