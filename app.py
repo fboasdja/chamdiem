@@ -885,11 +885,15 @@ def inline_edit():
 
     chuc_vu = r["chuc_vu"]
     giao_thong = int(r["giao_thong"] or 0)
-    xa_1_4 = int(r["xa_1_4"])
-    xa_5_6 = int(r["xa_5_6"])
+    xa_1_4 = int(r["xa_1_4"] or 0)
+    xa_5_6 = int(r["xa_5_6"] or 0)
     giam_sat_1_5 = int(r["giam_sat_1_5"] or 0)
     giam_sat_6 = int(r["giam_sat_6"] or 0)
-    an_sai = int(r["an_sai"])
+    an_sai = int(r["an_sai"] or 0)
+
+    # Khi vừa sửa cột giao_thông: dùng luôn giá trị vừa gửi để tính điểm (tránh không cập nhật điểm)
+    if field == "giao_thong" and saved_value is not None:
+        giao_thong = saved_value
 
     # Ràng buộc theo chức vụ
     if chuc_vu == "Thực tập":
@@ -900,10 +904,10 @@ def inline_edit():
         giao_thong = 0
         c.execute("UPDATE records SET giao_thong=0 WHERE id=?", (rid,))
 
-    # Tổng = án 1-5 + án 6 + giám sát 1-5 + giám sát 6
+    # Tổng = trừ giao thông (chỉ đếm án: án 1-5 + án 6 + giám sát 1-5 + giám sát 6), 1 án = 1
     tong_an = xa_1_4 + xa_5_6 + giam_sat_1_5 + giam_sat_6
-    # Điểm: giám sát 1-5 tính như án 1-5, giám sát 6 tính như án 6
-    diem = giao_thong*1 + (xa_1_4 + giam_sat_1_5)*2 + (xa_5_6 + giam_sat_6)*4 - an_sai*5
+    # Điểm: giao thông +1, án hình sự 1-5 +2, án hình sự 6 +4, giám sát 1-5 +2, giám sát 6 +4, trừ án sai
+    diem = giao_thong * 1 + (xa_1_4 + giam_sat_1_5) * 2 + (xa_5_6 + giam_sat_6) * 4 - an_sai * 5
 
     c.execute(
         "UPDATE records SET giam_sat=?, tong_an=?, diem=? WHERE id=?",
