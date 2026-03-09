@@ -45,7 +45,7 @@ def _is_api_request():
 
 def _normalize_so(value: str | None) -> str:
     v = (value or "").strip().upper()
-    return v if v in ("TRU", "LS") else "TRU"
+    return v if v in ("TRU", "LS", "PS") else "TRU"
 
 
 def _effective_so_for_session(role: str, so_allowed: str, requested_so: str | None) -> str:
@@ -198,7 +198,7 @@ def add_account():
     if role == "admin":
         so = "ALL"
     else:
-        if so not in ["TRU", "LS"]:
+        if so not in ["TRU", "LS", "PS"]:
             so = "TRU"
     
     if not username or not password:
@@ -327,7 +327,7 @@ def api_update_user_so(user_id: int):
         return jsonify(success=False, error="Không có quyền (chỉ admin)"), 403
     data = request.json or {}
     so = (data.get("so") or "").strip().upper()
-    if so not in ("TRU", "LS", "ALL"):
+    if so not in ("TRU", "LS", "PS", "ALL"):
         return jsonify(success=False, error="Sở không hợp lệ"), 400
     conn = get_db()
     c = conn.cursor()
@@ -501,6 +501,53 @@ def write_log(c, action, record_id, user_name=None, details=None):
          datetime.datetime.now().strftime("%d-%m-%Y %H:%M:%S"), details or "")
     )
 
+
+def write_login_log(username: str, ip: str | None, user_agent: str | None):
+    """
+    Ghi log đăng nhập (IP + user-agent + location) vào bảng login_logs.
+    Dùng connection riêng để không ảnh hưởng flow hiện tại.
+    """
+    try:
+        # Thử resolve địa chỉ từ IP (city, region, country)
+        location = ""
+        ip_clean = (ip or "").strip()
+        if ip_clean:
+            try:
+                import requests  # type: ignore[import]
+
+                resp = requests.get(
+                    f"http://ip-api.com/json/{ip_clean}?fields=status,message,country,regionName,city,query",
+                    timeout=2,
+                )
+                if resp.ok:
+                    data = resp.json() or {}
+                    if data.get("status") == "success":
+                        parts = [data.get("city") or "", data.get("regionName") or "", data.get("country") or ""]
+                        location = ", ".join([p for p in parts if p]).strip()
+            except Exception:
+                location = ""
+
+        conn = get_db()
+        c = conn.cursor()
+        c.execute(
+            "INSERT INTO login_logs(username, ip, user_agent, location, time) VALUES(?,?,?,?,?)",
+            (
+                username or "",
+                (ip or "").strip(),
+                (user_agent or "")[:512],
+                location,
+                datetime.datetime.now().strftime("%d-%m-%Y %H:%M:%S"),
+            ),
+        )
+        conn.commit()
+        conn.close()
+    except Exception as _e:
+        # Không để lỗi log IP làm hỏng luồng đăng nhập
+        try:
+            conn.close()  # type: ignore[has-type]
+        except Exception:
+            pass
+
 # Helper function để đảm bảo admin có full quyền
 def get_user_role(session):
     """Lấy role từ session và đảm bảo admin có full quyền"""
@@ -530,6 +577,11 @@ def can_view_logs(session):
     role = get_user_role(session)
     # Chỉ admin được xem nhật ký
     return role == "admin"
+
+
+def can_view_logip(session):
+    """Tab log IP: chỉ admin gốc xem được"""
+    return is_root_admin_session()
 
 def can_view_diem(session):
     """Trang Điểm: user, editer, admin đều xem được (chỉ đọc)"""
@@ -605,6 +657,18 @@ def login():
                 session.get("so_allowed", "TRU"),
                 session.get("current_so", "TRU"),
             )
+
+            # Ghi log IP đăng nhập
+            try:
+                ip = request.headers.get("X-Forwarded-For", request.remote_addr or "")
+                # Nếu có danh sách XFF, lấy IP đầu tiên
+                if ip and "," in ip:
+                    ip = ip.split(",", 1)[0].strip()
+                ua = request.headers.get("User-Agent", "")
+                write_login_log(u, ip, ua)
+            except Exception:
+                pass
+
             # Render UI thành công trước rồi redirect bằng JS (mượt hơn)
             return render_template(
                 "login.html",
@@ -667,29 +731,49 @@ def dashboard():
         if not can_edit(session):
             conn.close()
             return redirect("/dashboard")
-        
+
         chuc_vu = request.form.get("chuc_vu", "Thực tập").strip()
-        if chuc_vu not in ("Thực tập", "Cảnh sát viên", "Sĩ quan dự bị"):
+        if chuc_vu not in ("Thực tập", "Cảnh sát viên", "Sĩ quan dự bị", "Đội phó"):
             chuc_vu = "Thực tập"
         name = request.form.get("name", "").strip()
-        # Giao thông: Thực tập lấy từ form, Cảnh sát/Sĩ quan = 0
+
+        # Đọc tất cả các trường số
+        giao_thong = int(request.form.get("giao_thong", 0) or 0)
+        xa_1_4 = int(request.form.get("xa_1_4", 0) or 0)   # Án hình sự khoản 1-5
+        xa_5_6 = int(request.form.get("xa_5_6", 0) or 0)   # Án hình sự khoản 6
+        giam_sat_1_5 = int(request.form.get("giam_sat_1_5", 0) or 0)
+        giam_sat_6 = int(request.form.get("giam_sat_6", 0) or 0)
+        an_sai = int(request.form.get("an_sai", 0) or 0)
+
+        # Ràng buộc theo chức vụ:
+        # - Thực tập: chỉ tính giao thông + án, không có giám sát -> ép giám sát = 0
+        # - Cảnh sát viên / Sĩ quan dự bị / Đội phó: có thể ghi giao thông nhưng giao thông không cộng điểm
         if chuc_vu == "Thực tập":
-            giao_thong = int(request.form.get("giao_thong", 0) or 0)
             giam_sat_1_5 = 0
             giam_sat_6 = 0
-        else:
-            giao_thong = 0
-            giam_sat_1_5 = int(request.form.get("giam_sat_1_5", 0) or 0)
-            giam_sat_6 = int(request.form.get("giam_sat_6", 0) or 0)
-        xa_1_4 = int(request.form.get("xa_1_4", 0) or 0)   # hiển thị 1-5
-        xa_5_6 = int(request.form.get("xa_5_6", 0) or 0)   # hiển thị 6
-        an_sai = int(request.form.get("an_sai", 0) or 0)
+
         giam_sat = giam_sat_1_5 + giam_sat_6
 
-        # Tổng = án 1-5 + án 6 + giám sát 1-5 + giám sát 6
+        # Tổng hồ sơ án = án 1-5 + án 6 + giám sát 1-5 + giám sát 6
         tong_an = xa_1_4 + xa_5_6 + giam_sat_1_5 + giam_sat_6
-        # Điểm: giám sát 1-5 tính như án 1-5, giám sát 6 tính như án 6
-        diem = giao_thong*1 + (xa_1_4 + giam_sat_1_5)*2 + (xa_5_6 + giam_sat_6)*4 - an_sai*5
+
+        # Điểm (công thức mới):
+        # - Thực tập:
+        #   + Giao thông: +1 điểm / hồ sơ
+        #   + Án hình sự khoản 1-5: +2 điểm
+        #   + Án hình sự khoản 6: +4 điểm
+        #   + Giám sát: không tính điểm
+        # - Cảnh sát viên / Sĩ quan dự bị / Đội phó:
+        #   + Giao thông: không tính điểm
+        #   + Án hình sự khoản 1-5: +2 điểm
+        #   + Án hình sự khoản 6: +4 điểm
+        #   + Giám sát 1-5: +2 điểm
+        #   + Giám sát 6: +6 điểm
+        # - Án sai: -5 điểm
+        if chuc_vu == "Thực tập":
+            diem = giao_thong * 1 + xa_1_4 * 2 + xa_5_6 * 4 - an_sai * 5
+        else:
+            diem = xa_1_4 * 2 + xa_5_6 * 4 + giam_sat_1_5 * 2 + giam_sat_6 * 6 - an_sai * 5
 
         if is_postgres():
             c.execute("""
@@ -722,6 +806,7 @@ def dashboard():
             WHERE so = ?
             ORDER BY
                 CASE chuc_vu
+                    WHEN 'Đội phó' THEN 0
                     WHEN 'Cảnh sát viên' THEN 1
                     WHEN 'Sĩ quan dự bị' THEN 2
                     WHEN 'Thực tập' THEN 3
@@ -732,10 +817,24 @@ def dashboard():
         data = c.fetchall()
     else:
         data = []
+
+    # Tổng cho Main/Điểm
+    total_giao_thong = sum(int(r["giao_thong"] or 0) for r in data) if data else 0
+    total_hinh_su = (
+        sum(int(r["xa_1_4"] or 0) + int(r["xa_5_6"] or 0) for r in data) if data else 0
+    )
+    total_giam_sat = (
+        sum(int(r["giam_sat_1_5"] or 0) + int(r["giam_sat_6"] or 0) for r in data)
+        if data
+        else 0
+    )
+    total_diem = sum(int(r["diem"] or 0) for r in data) if data else 0
+    total_tong_tien = sum(int(r["tong_tien"] or 0) for r in data) if data else 0
     
     # Nhật ký load theo phân trang qua API để nhìn gọn hơn
     nhat_ky = []
     can_see_logs = can_view_logs(session)
+    can_see_logip = can_view_logip(session)
     
     conn.close()
 
@@ -758,6 +857,12 @@ def dashboard():
         stats_title=get_setting(f"stats_title_{current_so}", f"Thống kê điểm Sở {current_so}"),
         stats_label=get_setting(f"stats_label_{current_so}", "Tổng số PS"),
         can_edit_stats=(user_role == "admin"),
+        total_giao_thong=total_giao_thong,
+        total_hinh_su=total_hinh_su,
+        total_giam_sat=total_giam_sat,
+        total_diem=total_diem,
+        total_tong_tien=total_tong_tien,
+        can_see_logip=can_see_logip,
     )
 
 
@@ -815,6 +920,62 @@ def api_logs():
         total_pages=total_pages,
     )
 
+
+@app.get("/api/login_logs")
+def api_login_logs():
+    """API trả danh sách log IP đăng nhập (chỉ admin gốc)."""
+    if not is_root_admin_session():
+        return jsonify(success=False, error="Không có quyền (chỉ admin gốc)"), 403
+
+    try:
+        page = int((request.args.get("page") or "1").strip())
+    except Exception:
+        page = 1
+    if page < 1:
+        page = 1
+
+    page_size = 12
+    offset = (page - 1) * page_size
+
+    conn = get_db()
+    c = conn.cursor()
+    c.execute("SELECT COUNT(1) AS total FROM login_logs")
+    total_row = c.fetchone()
+    total = int((total_row["total"] if total_row and "total" in total_row.keys() else 0) or 0)
+
+    c.execute(
+        """
+        SELECT id, username, ip, user_agent, location, time
+        FROM login_logs
+        ORDER BY id DESC
+        LIMIT ? OFFSET ?
+        """,
+        (page_size, offset),
+    )
+    rows = c.fetchall()
+    conn.close()
+
+    total_pages = (total + page_size - 1) // page_size if total > 0 else 1
+    data = [
+        {
+            "id": r["id"],
+            "username": r["username"] or "",
+            "ip": r["ip"] or "",
+            "user_agent": r["user_agent"] or "",
+            "location": r["location"] or "",
+            "time": r["time"] or "",
+        }
+        for r in rows
+    ]
+    return jsonify(
+        success=True,
+        logs=data,
+        page=page,
+        page_size=page_size,
+        total=total,
+        total_pages=total_pages,
+    )
+
 # ================= INLINE EDIT (ENTER LƯU) =================
 @app.route("/inline_edit", methods=["POST"])
 def inline_edit():
@@ -829,7 +990,18 @@ def inline_edit():
 
     # Ép kiểu số cho các cột số - xóa hết thì mặc định 0
     saved_value = None
-    if field in ("giao_thong", "xa_1_4", "xa_5_6", "giam_sat_1_5", "giam_sat_6", "an_sai"):
+    numeric_fields = (
+        "giao_thong",
+        "xa_1_4",
+        "xa_5_6",
+        "giam_sat_1_5",
+        "giam_sat_6",
+        "an_sai",
+        "tien_khoan_1_2",
+        "tien_khoan_3_5",
+        "tien_khoan_6_truy_na",
+    )
+    if field in numeric_fields:
         raw = (value if value is not None else "").strip() if isinstance(value, str) else value
         try:
             value = int(float(str(raw))) if raw not in ("", None) else 0
@@ -860,25 +1032,39 @@ def inline_edit():
         # Nếu DB cũ chưa có cột so, bỏ qua
         pass
 
-    allowed_fields = {"chuc_vu", "name", "giao_thong", "xa_1_4", "xa_5_6", "giam_sat_1_5", "giam_sat_6", "an_sai"}
+    allowed_fields = {
+        "chuc_vu",
+        "name",
+        "giao_thong",
+        "xa_1_4",
+        "xa_5_6",
+        "giam_sat_1_5",
+        "giam_sat_6",
+        "an_sai",
+        "tien_khoan_1_2",
+        "tien_khoan_3_5",
+        "tien_khoan_6_truy_na",
+    }
     if field not in allowed_fields:
         conn.close()
         return jsonify(success=False, error="Trường không hợp lệ")
 
-    # Chức vụ chỉ cho phép 3 giá trị
+    # Chức vụ chỉ cho phép 4 giá trị
     if field == "chuc_vu":
-        if value not in ("Thực tập", "Cảnh sát viên", "Sĩ quan dự bị"):
+        if value not in ("Thực tập", "Cảnh sát viên", "Sĩ quan dự bị", "Đội phó"):
             conn.close()
             return jsonify(success=False, error="Chức vụ không hợp lệ")
         if value == "Thực tập":
             c.execute("UPDATE records SET chuc_vu=?, giam_sat_1_5=0, giam_sat_6=0, giam_sat=0 WHERE id=?", (value, rid))
         else:
-            c.execute("UPDATE records SET chuc_vu=?, giao_thong=0 WHERE id=?", (value, rid))
+            c.execute("UPDATE records SET chuc_vu=? WHERE id=?", (value, rid))
     else:
         c.execute(f"UPDATE records SET {field}=? WHERE id=?", (value, rid))
 
     c.execute(
-        "SELECT chuc_vu,giao_thong,xa_1_4,xa_5_6,giam_sat_1_5,giam_sat_6,an_sai FROM records WHERE id=?",
+        "SELECT chuc_vu,giao_thong,xa_1_4,xa_5_6,giam_sat_1_5,giam_sat_6,an_sai,"
+        "tien_khoan_1_2,tien_khoan_3_5,tien_khoan_6_truy_na "
+        "FROM records WHERE id=?",
         (rid,)
     )
     r = c.fetchone()
@@ -890,6 +1076,9 @@ def inline_edit():
     giam_sat_1_5 = int(r["giam_sat_1_5"] or 0)
     giam_sat_6 = int(r["giam_sat_6"] or 0)
     an_sai = int(r["an_sai"] or 0)
+    tien_khoan_1_2 = int(r["tien_khoan_1_2"] or 0)
+    tien_khoan_3_5 = int(r["tien_khoan_3_5"] or 0)
+    tien_khoan_6_truy_na = int(r["tien_khoan_6_truy_na"] or 0)
 
     # Khi vừa sửa cột giao_thông: dùng luôn giá trị vừa gửi để tính điểm (tránh không cập nhật điểm)
     if field == "giao_thong" and saved_value is not None:
@@ -900,21 +1089,38 @@ def inline_edit():
         giam_sat_1_5 = 0
         giam_sat_6 = 0
         c.execute("UPDATE records SET giam_sat_1_5=0, giam_sat_6=0, giam_sat=0 WHERE id=?", (rid,))
-    else:
-        # Chỉ tự động ép giao thông về 0 khi KHÔNG phải đang sửa trực tiếp cột giao_thong.
-        # Khi người dùng sửa giao_thong, ta cho phép điểm cập nhật theo giá trị mới.
-        if field != "giao_thong":
-            giao_thong = 0
-            c.execute("UPDATE records SET giao_thong=0 WHERE id=?", (rid,))
 
-    # Tổng = trừ giao thông (chỉ đếm án: án 1-5 + án 6 + giám sát 1-5 + giám sát 6), 1 án = 1
+    # Tổng hồ sơ án = án 1-5 + án 6 + giám sát 1-5 + giám sát 6
     tong_an = xa_1_4 + xa_5_6 + giam_sat_1_5 + giam_sat_6
-    # Điểm: giao thông +1, án hình sự 1-5 +2, án hình sự 6 +4, giám sát 1-5 +2, giám sát 6 +4, trừ án sai
-    diem = giao_thong * 1 + (xa_1_4 + giam_sat_1_5) * 2 + (xa_5_6 + giam_sat_6) * 4 - an_sai * 5
+
+    # Điểm (công thức mới):
+    # - Thực tập:
+    #   + Giao thông: +1 điểm / hồ sơ
+    #   + Án hình sự khoản 1-5: +2 điểm
+    #   + Án hình sự khoản 6: +4 điểm
+    #   + Giám sát: không tính điểm
+    # - Cảnh sát viên / Sĩ quan dự bị / Đội phó:
+    #   + Giao thông: không tính điểm
+    #   + Án hình sự khoản 1-5: +2 điểm
+    #   + Án hình sự khoản 6: +4 điểm
+    #   + Giám sát 1-5: +2 điểm
+    #   + Giám sát 6: +6 điểm
+    # - Án sai: -5 điểm
+    if chuc_vu == "Thực tập":
+        diem = giao_thong * 1 + xa_1_4 * 2 + xa_5_6 * 4 - an_sai * 5
+    else:
+        diem = xa_1_4 * 2 + xa_5_6 * 4 + giam_sat_1_5 * 2 + giam_sat_6 * 6 - an_sai * 5
+
+    # Tiền xử án: 1-2 (3.000) + 3-5 (6.000) + 6 & truy nã đỏ (10.000)
+    tong_tien = (
+        tien_khoan_1_2 * 3000
+        + tien_khoan_3_5 * 6000
+        + tien_khoan_6_truy_na * 10000
+    )
 
     c.execute(
-        "UPDATE records SET giam_sat=?, tong_an=?, diem=? WHERE id=?",
-        (giam_sat_1_5 + giam_sat_6, tong_an, diem, rid)
+        "UPDATE records SET giam_sat=?, tong_an=?, diem=?, tong_tien=? WHERE id=?",
+        (giam_sat_1_5 + giam_sat_6, tong_an, diem, tong_tien, rid)
     )
 
     user_name = session.get("username", "Unknown")
@@ -930,6 +1136,7 @@ def inline_edit():
         "giam_sat_1_5": giam_sat_1_5,
         "giam_sat_6": giam_sat_6,
         "chuc_vu": chuc_vu,
+        "tong_tien": tong_tien,
     }
     if saved_value is not None:
         resp["saved_value"] = saved_value

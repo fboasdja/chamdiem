@@ -570,6 +570,23 @@ td[contenteditable="false"]:focus{
     color:var(--brand);
 }
 
+.main-summary-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap:12px;
+    margin-top:12px;
+    border-top:1px solid rgba(31,41,55,.95);
+    padding-top:10px;
+}
+
+.main-summary-item{
+    flex:1 1 180px;
+    display:flex;
+    flex-direction:column;
+    gap:2px;
+    font-size:12px;
+}
+
 .del{
     color:#6b7280;
     text-decoration:none;

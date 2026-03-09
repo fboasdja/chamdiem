@@ -112,6 +112,11 @@ def init_db():
                 an_sai INTEGER DEFAULT 0,
                 tong_an INTEGER DEFAULT 0,
                 diem INTEGER DEFAULT 0,
+                -- Tiền xử án
+                tien_khoan_1_2 INTEGER DEFAULT 0,
+                tien_khoan_3_5 INTEGER DEFAULT 0,
+                tien_khoan_6_truy_na INTEGER DEFAULT 0,
+                tong_tien INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT NOW()
             );
             """,
@@ -126,6 +131,19 @@ def init_db():
                 user_name TEXT,
                 time TEXT,
                 details TEXT
+            );
+            """,
+        )
+        execute(
+            cur,
+            """
+            CREATE TABLE IF NOT EXISTS login_logs(
+                id SERIAL PRIMARY KEY,
+                username TEXT,
+                ip TEXT,
+                user_agent TEXT,
+                location TEXT,
+                time TEXT
             );
             """,
         )
@@ -162,14 +180,37 @@ def init_db():
         execute(
             cur,
             """
+            INSERT INTO settings(key,value) VALUES('monthly_title_PS','THỐNG KÊ ĐIỂM THÁNG')
+            ON CONFLICT(key) DO NOTHING;
+            """,
+        )
+        # Tài khoản admin mặc định dùng mật khẩu admin123
+        execute(
+            cur,
+            """
             INSERT INTO users(username,password,role,so_allowed)
-            VALUES('admin','admin','admin','ALL')
+            VALUES('admin','admin123','admin','ALL')
             ON CONFLICT(username) DO NOTHING;
             """,
+        )
+        # Nếu DB cũ còn để mật khẩu admin thì tự động nâng lên admin123
+        execute(
+            cur,
+            "UPDATE users SET password='admin123', role='admin', so_allowed='ALL' WHERE username='admin' AND password='admin';",
         )
         execute(cur, "UPDATE users SET role='admin', so_allowed='ALL' WHERE username='admin';")
         execute(cur, "ALTER TABLE records ADD COLUMN IF NOT EXISTS giam_sat_1_5 INTEGER DEFAULT 0;")
         execute(cur, "ALTER TABLE records ADD COLUMN IF NOT EXISTS giam_sat_6 INTEGER DEFAULT 0;")
+        # Các cột phục vụ tab Tiền xử án
+        execute(cur, "ALTER TABLE records ADD COLUMN IF NOT EXISTS tien_khoan_1_2 INTEGER DEFAULT 0;")
+        execute(cur, "ALTER TABLE records ADD COLUMN IF NOT EXISTS tien_khoan_3_5 INTEGER DEFAULT 0;")
+        execute(cur, "ALTER TABLE records ADD COLUMN IF NOT EXISTS tien_khoan_6_truy_na INTEGER DEFAULT 0;")
+        execute(cur, "ALTER TABLE records ADD COLUMN IF NOT EXISTS tong_tien INTEGER DEFAULT 0;")
+        # Đảm bảo bảng login_logs cũ có cột location
+        try:
+            execute(cur, "ALTER TABLE login_logs ADD COLUMN location TEXT")
+        except Exception:
+            pass
         conn.commit()
         conn.close()
         return
@@ -206,6 +247,11 @@ def init_db():
             an_sai INTEGER,
             tong_an INTEGER,
             diem INTEGER,
+            -- Tiền xử án
+            tien_khoan_1_2 INTEGER DEFAULT 0,
+            tien_khoan_3_5 INTEGER DEFAULT 0,
+            tien_khoan_6_truy_na INTEGER DEFAULT 0,
+            tong_tien INTEGER DEFAULT 0,
             created_at TEXT DEFAULT (datetime('now'))
         )
         """,
@@ -220,6 +266,19 @@ def init_db():
             user_name TEXT,
             time TEXT,
             details TEXT
+        )
+        """,
+    )
+    execute(
+        cur,
+        """
+        CREATE TABLE IF NOT EXISTS login_logs(
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT,
+            ip TEXT,
+            user_agent TEXT,
+            location TEXT,
+            time TEXT
         )
         """,
     )
@@ -247,17 +306,51 @@ def init_db():
         "INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)",
         ("monthly_title_LS", "THỐNG KÊ ĐIỂM THÁNG"),
     )
+    # Tài khoản admin mặc định dùng mật khẩu admin123
     execute(
         cur,
-        "INSERT OR IGNORE INTO users(username,password,role,so_allowed) VALUES('admin','admin','admin','ALL')",
+        "INSERT OR IGNORE INTO users(username,password,role,so_allowed) VALUES('admin','admin123','admin','ALL')",
+    )
+    # Nếu DB cũ còn để mật khẩu admin thì tự động nâng lên admin123
+    execute(
+        cur,
+        "UPDATE users SET password='admin123', role='admin', so_allowed='ALL' WHERE username='admin' AND password='admin'",
     )
     execute(cur, "UPDATE users SET role='admin', so_allowed='ALL' WHERE username='admin'")
+    # Khởi tạo thêm cấu hình cho Sở PS (nếu dùng)
+    execute(
+        cur,
+        "INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)",
+        ("monthly_title_PS", "THỐNG KÊ ĐIỂM THÁNG"),
+    )
     try:
         execute(cur, "ALTER TABLE records ADD COLUMN giam_sat_1_5 INTEGER DEFAULT 0")
     except Exception:
         pass
     try:
         execute(cur, "ALTER TABLE records ADD COLUMN giam_sat_6 INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    # Các cột phục vụ tab Tiền xử án
+    try:
+        execute(cur, "ALTER TABLE records ADD COLUMN tien_khoan_1_2 INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    try:
+        execute(cur, "ALTER TABLE records ADD COLUMN tien_khoan_3_5 INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    try:
+        execute(cur, "ALTER TABLE records ADD COLUMN tien_khoan_6_truy_na INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    try:
+        execute(cur, "ALTER TABLE records ADD COLUMN tong_tien INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    # Đảm bảo bảng login_logs cũ có cột location
+    try:
+        execute(cur, "ALTER TABLE login_logs ADD COLUMN location TEXT")
     except Exception:
         pass
     conn.commit()

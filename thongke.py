@@ -11,7 +11,7 @@ def thong_ke_theo_thang(nam=None, so=None):
     c = conn.cursor()
 
     if is_postgres():
-        if so in ("TRU", "LS"):
+        if so in ("TRU", "LS", "PS"):
             c.execute(
                 """
                 SELECT
@@ -39,7 +39,7 @@ def thong_ke_theo_thang(nam=None, so=None):
                 (int(nam),),
             )
     else:
-        if so in ("TRU", "LS"):
+        if so in ("TRU", "LS", "PS"):
             c.execute(
                 """
                 SELECT
@@ -98,7 +98,7 @@ def top_nguoi_diem_cao(limit=3, so=None):
     conn = get_db()
     c = conn.cursor()
 
-    if so in ("TRU", "LS"):
+    if so in ("TRU", "LS", "PS"):
         c.execute(
             """
             SELECT name, SUM(diem) AS tong_diem

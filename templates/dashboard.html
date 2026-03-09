@@ -36,6 +36,11 @@
                 Sở LS
             </button>
             {% endif %}
+            {% if user_role == 'admin' or so_allowed in ['PS', 'ALL'] %}
+            <button class="side-so-btn {% if current_so == 'PS' %}active{% endif %}" onclick="window.location='{{ url_for('dashboard') }}?so=PS'">
+                Sở PS
+            </button>
+            {% endif %}
             {% if username == 'admin' %}
             <button class="side-so-btn" onclick="openHealTab()">Heal</button>
             {% endif %}
@@ -46,6 +51,7 @@
     <div class="tabs">
         {% if can_see_main %}
         <button class="tab-btn active" onclick="switchTab('main')">Main</button>
+        <button class="tab-btn" onclick="switchTab('tien')">Tiền xử án</button>
         {% endif %}
         {% if can_see_diem %}
         <button class="tab-btn {% if not can_see_main %}active{% endif %}" onclick="switchTab('diem')">Điểm</button>
@@ -56,6 +62,9 @@
         {% endif %}
         {% if can_see_logs %}
         <button class="tab-btn" onclick="switchTab('nhatky')">Nhật ký</button>
+        {% endif %}
+        {% if can_see_logip %}
+        <button class="tab-btn" onclick="switchTab('logip')">Log IP</button>
         {% endif %}
     </div>
 
@@ -81,6 +90,7 @@
                             <option>Thực tập</option>
                             <option>Cảnh sát viên</option>
                             <option>Sĩ quan dự bị</option>
+                            <option>Đội phó</option>
                         </select>
                     </div>
                     
@@ -153,6 +163,7 @@
                                 <option value="Thực tập" {% if r.chuc_vu == 'Thực tập' %}selected{% endif %}>Thực tập</option>
                                 <option value="Cảnh sát viên" {% if r.chuc_vu == 'Cảnh sát viên' %}selected{% endif %}>Cảnh sát viên</option>
                                 <option value="Sĩ quan dự bị" {% if r.chuc_vu == 'Sĩ quan dự bị' %}selected{% endif %}>Sĩ quan dự bị</option>
+                                <option value="Đội phó" {% if r.chuc_vu == 'Đội phó' %}selected{% endif %}>Đội phó</option>
                             </select>
                         </td>
                         <td contenteditable onblur="edit({{r.id}},'name',this)">{{r.name}}</td>
@@ -190,6 +201,54 @@
                 {% endfor %}
                 </tbody>
             </table>
+
+        </section>
+    </div>
+    {% endif %}
+
+    <!-- ===== Tab Tiền xử án (admin + editer) ===== -->
+    {% if can_see_main %}
+    <div id="tab-tien" class="tab-content">
+        <section class="card">
+            <h2>Tiền xử án</h2>
+            <div class="diem-table-scroll">
+                <table class="top-scores-table">
+                    <thead>
+                        <tr>
+                            <th>Chức vụ</th>
+                            <th>Tên</th>
+                            <th>Hồ sơ khoản 1-2<br><span class="muted">(3.000)</span></th>
+                            <th>Hồ sơ khoản 3-5<br><span class="muted">(6.000)</span></th>
+                            <th>Khoản 6 &amp; truy nã đỏ<br><span class="muted">(10.000)</span></th>
+                            <th>Tổng án</th>
+                            <th>Tổng tiền</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for r in data %}
+                        <tr data-id="{{ r.id }}">
+                            <td>{{ r.chuc_vu }}</td>
+                            <td><strong>{{ r.name }}</strong></td>
+                            <td contenteditable onblur="editTien({{ r.id }}, 'tien_khoan_1_2', this)">{{ r.tien_khoan_1_2 or 0 }}</td>
+                            <td contenteditable onblur="editTien({{ r.id }}, 'tien_khoan_3_5', this)">{{ r.tien_khoan_3_5 or 0 }}</td>
+                            <td contenteditable onblur="editTien({{ r.id }}, 'tien_khoan_6_truy_na', this)">{{ r.tien_khoan_6_truy_na or 0 }}</td>
+                            <td class="muted">{{ r.tong_an or 0 }}</td>
+                            <td class="strong tien-tong-cell" data-raw="{{ r.tong_tien or 0 }}">{{ r.tong_tien or 0 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if not data %}
+            <p class="diem-empty">Chưa có dữ liệu</p>
+            {% endif %}
+
+            <div class="main-summary-row" style="margin-top:16px;">
+                <div class="main-summary-item">
+                    <span class="muted">Tổng tiền xử án</span>
+                    <span class="strong" id="tong_tien_all" data-raw="{{ total_tong_tien }}">{{ total_tong_tien }}</span>
+                </div>
+            </div>
         </section>
     </div>
     {% endif %}
@@ -250,6 +309,8 @@
                                 <th>Giao thông</th>
                                 <th>Án hình sự khoản 1-5</th>
                                 <th>Án hình sự khoản 6</th>
+                                <th>Giám sát án 1-5</th>
+                                <th>Giám sát án 6</th>
                                 <th>Án sai</th>
                                 <th>Tổng</th>
                                 <th>Điểm</th>
@@ -263,6 +324,8 @@
                                 <td>{{ r.giao_thong or 0 }}</td>
                                 <td>{{ r.xa_1_4 }}</td>
                                 <td>{{ r.xa_5_6 }}</td>
+                                <td>{% if r.chuc_vu == 'Thực tập' %}X{% else %}{{ r.giam_sat_1_5 or 0 }}{% endif %}</td>
+                                <td>{% if r.chuc_vu == 'Thực tập' %}X{% else %}{{ r.giam_sat_6 or 0 }}{% endif %}</td>
                                 <td>{{ r.an_sai }}</td>
                                 <td class="muted">{{ r.tong_an }}</td>
                                 <td class="strong">{{ r.diem }}</td>
@@ -299,6 +362,14 @@
                                 <span class="diem-val">{{r.xa_5_6}}</span>
                             </div>
                             <div class="diem-row">
+                                <span class="diem-label">Giám sát án 1-5</span>
+                                <span class="diem-val">{% if r.chuc_vu == 'Thực tập' %}X{% else %}{{r.giam_sat_1_5 or 0}}{% endif %}</span>
+                            </div>
+                            <div class="diem-row">
+                                <span class="diem-label">Giám sát án 6</span>
+                                <span class="diem-val">{% if r.chuc_vu == 'Thực tập' %}X{% else %}{{r.giam_sat_6 or 0}}{% endif %}</span>
+                            </div>
+                            <div class="diem-row">
                                 <span class="diem-label">Án sai</span>
                                 <span class="diem-val">{{r.an_sai}}</span>
                             </div>
@@ -319,6 +390,26 @@
                 {% if not data %}
                 <p class="diem-empty">Chưa có dữ liệu</p>
                 {% endif %}
+            </div>
+
+            <!-- Tổng cuối tab Điểm (áp dụng cho cả Điểm bảng & Điểm riêng) -->
+            <div class="main-summary-row">
+                <div class="main-summary-item">
+                    <span class="muted">Tổng hồ sơ giao thông</span>
+                    <span class="strong" id="total_giao_thong">{{ total_giao_thong }}</span>
+                </div>
+                <div class="main-summary-item">
+                    <span class="muted">Tổng hồ sơ hình sự (1-5 &amp; 6)</span>
+                    <span class="strong" id="total_hinh_su">{{ total_hinh_su }}</span>
+                </div>
+                <div class="main-summary-item">
+                    <span class="muted">Tổng hồ sơ giám sát (1-5 &amp; 6)</span>
+                    <span class="strong" id="total_giam_sat">{{ total_giam_sat }}</span>
+                </div>
+                <div class="main-summary-item">
+                    <span class="muted">Tổng điểm</span>
+                    <span class="strong" id="total_diem">{{ total_diem }}</span>
+                </div>
             </div>
         </section>
     </div>
@@ -361,6 +452,7 @@
                                 <select id="new_so" required>
                                     <option value="TRU">Sở TRU</option>
                                     <option value="LS">Sở LS</option>
+                                    <option value="PS">Sở PS</option>
                                 </select>
                             </div>
                         </div>
@@ -478,12 +570,47 @@
     </div>
     {% endif %}
 
+    <!-- ===== Tab Log IP (Admin) ===== -->
+    {% if can_see_logip %}
+    <div id="tab-logip" class="tab-content">
+        <section class="card">
+            <div class="nhatky-head">
+                <h2>Log đăng nhập (IP)</h2>
+                <button class="btn-toggle" onclick="loadLoginLogs(1)">Tải lại</button>
+            </div>
+            <div class="nhatky-container">
+                <table class="nhatky-table">
+                    <thead>
+                        <tr>
+                            <th>Thời gian</th>
+                            <th>Tài khoản</th>
+                            <th>Địa chỉ IP</th>
+                            <th>Thiết bị</th>
+                        </tr>
+                    </thead>
+                    <tbody id="logip-body">
+                        <tr>
+                            <td colspan="4" style="text-align:center;color:#9ca3af;">Đang tải...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="nhatky-pager">
+                <button type="button" class="btn-toggle" id="logip-prev-btn" onclick="changeLoginLogsPage(-1)">Trang trước</button>
+                <span id="logip-page-info" class="muted">Trang 1/1</span>
+                <button type="button" class="btn-toggle" id="logip-next-btn" onclick="changeLoginLogsPage(1)">Trang sau</button>
+            </div>
+        </section>
+    </div>
+    {% endif %}
+
 </div>
 
 <script>
 let chart = null;
 let chartType = 'bar'; // 'bar' hoặc 'line'
 let logsPageState = { page: 1, totalPages: 1 };
+let loginLogsPageState = { page: 1, totalPages: 1 };
 
 // Toggle field theo chức vụ:
 // - Thực tập: có Giao thông, Giám sát hiển thị X
@@ -656,6 +783,8 @@ function editChucVu(id, value) {
                     }
                 }
             }
+            // Sau khi đổi chức vụ và điểm, cập nhật lại tổng bên tab Điểm
+            recalcTotalsFromMain();
         }
     });
 }
@@ -675,15 +804,125 @@ function edit(id, field, el){
     .then(r=>r.json())
     .then(d=>{
         if(d.success){
-            const tr = el.closest("tr")
-            tr.querySelector(".tong_an").innerText = d.tong_an
-            tr.querySelector(".diem").innerText = d.diem
+            const tr = el.closest("tr");
+            tr.querySelector(".tong_an").innerText = d.tong_an;
+            tr.querySelector(".diem").innerText = d.diem;
             // Cập nhật ô số với giá trị đã lưu (xóa hết = 0, lỗi = 0)
             if(d.saved_value !== undefined){
-                el.innerText = d.saved_value
+                el.innerText = d.saved_value;
             }
+            // Sau khi chỉnh sửa 1 ô, cập nhật lại tổng bên tab Điểm
+            recalcTotalsFromMain();
         }
     })
+}
+
+function formatCurrency(v) {
+    const n = Number(v) || 0;
+    return n.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".") + "$";
+}
+
+function applyCurrencyFormatting() {
+    document.querySelectorAll(".tien-tong-cell").forEach((cell) => {
+        const raw = cell.getAttribute("data-raw") ?? cell.innerText;
+        const n = parseInt(String(raw).replace(/[^0-9-]/g, ""), 10) || 0;
+        cell.setAttribute("data-raw", n);
+        cell.innerText = formatCurrency(n);
+    });
+    const totalEl = document.getElementById("tong_tien_all");
+    if (totalEl) {
+        const raw = totalEl.getAttribute("data-raw") ?? totalEl.innerText;
+        const n = parseInt(String(raw).replace(/[^0-9-]/g, ""), 10) || 0;
+        totalEl.setAttribute("data-raw", n);
+        totalEl.innerText = formatCurrency(n);
+    }
+}
+
+// Chỉnh tiền xử án trong tab Tiền xử án
+function editTien(id, field, el) {
+    const val = (el.innerText || "").trim();
+    fetch("/inline_edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, field, value: val })
+    })
+    .then(r => r.json())
+    .then(d => {
+        if (!d.success) return;
+        const tr = el.closest("tr");
+        if (d.saved_value !== undefined) {
+            el.innerText = d.saved_value;
+        }
+        if (tr && typeof d.tong_tien !== "undefined") {
+            const cell = tr.querySelector(".tien-tong-cell");
+            if (cell) {
+                cell.setAttribute("data-raw", d.tong_tien || 0);
+                cell.innerText = formatCurrency(d.tong_tien || 0);
+            }
+        }
+        recalcTongTien();
+    });
+}
+
+// Tính lại tổng tiền xử án toàn bảng
+function recalcTongTien() {
+    const tab = document.getElementById("tab-tien");
+    if (!tab) return;
+    const rows = tab.querySelectorAll("tbody tr");
+    let total = 0;
+    rows.forEach((row) => {
+        const cell = row.querySelector(".tien-tong-cell");
+        if (!cell) return;
+        const raw = cell.getAttribute("data-raw") ?? cell.innerText;
+        const v = parseInt(String(raw).replace(/[^0-9-]/g, ""), 10) || 0;
+        total += v;
+    });
+    const el = document.getElementById("tong_tien_all");
+    if (el) {
+        el.setAttribute("data-raw", total);
+        el.innerText = formatCurrency(total);
+    }
+}
+
+// Tính lại tổng (giao thông / hình sự / giám sát / điểm) dựa trên bảng Main
+function recalcTotalsFromMain() {
+    const mainTab = document.getElementById('tab-main');
+    if (!mainTab) return;
+    const tbody = mainTab.querySelector('tbody');
+    if (!tbody) return;
+
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    let totalGt = 0;
+    let totalHs = 0;
+    let totalGs = 0;
+    let totalDiem = 0;
+
+    rows.forEach((row) => {
+        const cells = row.querySelectorAll('td');
+        if (cells.length < 10) return;
+        const giaoThong = parseInt((cells[2].innerText || '').replace(/[^0-9-]/g, ''), 10) || 0;
+        const xa14 = parseInt((cells[3].innerText || '').replace(/[^0-9-]/g, ''), 10) || 0;
+        const xa56 = parseInt((cells[4].innerText || '').replace(/[^0-9-]/g, ''), 10) || 0;
+        const gs15Text = (cells[5].innerText || '').trim();
+        const gs6Text = (cells[6].innerText || '').trim();
+        const gs15 = gs15Text === 'X' ? 0 : (parseInt(gs15Text.replace(/[^0-9-]/g, ''), 10) || 0);
+        const gs6 = gs6Text === 'X' ? 0 : (parseInt(gs6Text.replace(/[^0-9-]/g, ''), 10) || 0);
+        const diem = parseInt((cells[9].innerText || '').replace(/[^0-9-]/g, ''), 10) || 0;
+
+        totalGt += giaoThong;
+        totalHs += xa14 + xa56;
+        totalGs += gs15 + gs6;
+        totalDiem += diem;
+    });
+
+    const gtEl = document.getElementById('total_giao_thong');
+    const hsEl = document.getElementById('total_hinh_su');
+    const gsEl = document.getElementById('total_giam_sat');
+    const diemEl = document.getElementById('total_diem');
+    if (gtEl) gtEl.innerText = totalGt;
+    if (hsEl) hsEl.innerText = totalHs;
+    if (gsEl) gsEl.innerText = totalGs;
+    if (diemEl) diemEl.innerText = totalDiem;
 }
 
 document.addEventListener("keydown", e=>{
@@ -716,9 +955,11 @@ function switchTab(tabName) {
         const btnText = btn.textContent.trim();
         if((tabName === 'main' && btnText === 'Main') ||
            (tabName === 'diem' && btnText === 'Điểm') ||
+           (tabName === 'tien' && btnText === 'Tiền xử án') ||
            (tabName === 'thongke' && btnText === 'Thống kê') ||
            (tabName === 'manage' && btnText === 'Manage') ||
-           (tabName === 'nhatky' && btnText === 'Nhật ký')) {
+           (tabName === 'nhatky' && btnText === 'Nhật ký') ||
+           (tabName === 'logip' && btnText === 'Log IP')) {
             btn.classList.add('active');
         }
     });
@@ -730,6 +971,9 @@ function switchTab(tabName) {
     }
     if(tabName === 'nhatky') {
         loadLogs(logsPageState.page || 1);
+    }
+    if(tabName === 'logip') {
+        loadLoginLogs(loginLogsPageState.page || 1);
     }
 
 }
@@ -869,6 +1113,58 @@ function changeLogsPage(step) {
     const next = (logsPageState.page || 1) + step;
     if (next < 1 || next > (logsPageState.totalPages || 1)) return;
     loadLogs(next);
+}
+
+async function loadLoginLogs(page = 1) {
+    const body = document.getElementById('logip-body');
+    const info = document.getElementById('logip-page-info');
+    const prevBtn = document.getElementById('logip-prev-btn');
+    const nextBtn = document.getElementById('logip-next-btn');
+    if (!body || !info || !prevBtn || !nextBtn) return;
+
+    body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#9ca3af;">Đang tải...</td></tr>';
+    try {
+        const r = await fetch(`/api/login_logs?page=${page}`);
+
+        const contentType = r.headers.get('content-type') || '';
+        if (!contentType.includes('application/json')) {
+            const text = await r.text();
+            body.innerHTML = `<tr><td colspan="4" style="text-align:center;color:#ef4444;">Server trả về dữ liệu không hợp lệ: ${text.slice(0, 120)}...</td></tr>`;
+            return;
+        }
+
+        const d = await r.json();
+        if (!d.success) {
+            body.innerHTML = `<tr><td colspan="4" style="text-align:center;color:#ef4444;">${d.error || 'Không thể tải log IP'}</td></tr>`;
+            return;
+        }
+        loginLogsPageState.page = d.page || 1;
+        loginLogsPageState.totalPages = d.total_pages || 1;
+        prevBtn.disabled = loginLogsPageState.page <= 1;
+        nextBtn.disabled = loginLogsPageState.page >= loginLogsPageState.totalPages;
+        info.innerText = `Trang ${loginLogsPageState.page}/${loginLogsPageState.totalPages} • ${d.total || 0} bản ghi`;
+
+        if (!d.logs || d.logs.length === 0) {
+            body.innerHTML = '<tr><td colspan="4" style="text-align:center;color:#9ca3af;">Chưa có log đăng nhập</td></tr>';
+            return;
+        }
+        body.innerHTML = d.logs.map(log => `
+            <tr>
+                <td>${log.time || ''}</td>
+                <td><strong>${log.username || ''}</strong></td>
+                <td>${log.ip || ''}</td>
+                <td>${log.user_agent || ''}</td>
+            </tr>
+        `).join('');
+    } catch (e) {
+        body.innerHTML = `<tr><td colspan="4" style="text-align:center;color:#ef4444;">Lỗi: ${e.message}</td></tr>`;
+    }
+}
+
+function changeLoginLogsPage(step) {
+    const next = (loginLogsPageState.page || 1) + step;
+    if (next < 1 || next > (loginLogsPageState.totalPages || 1)) return;
+    loadLoginLogs(next);
 }
 
 // Tự động load thống kê nếu user chỉ có quyền xem thống kê
@@ -1118,6 +1414,7 @@ async function loadUsers() {
                         <option value="ALL" ${(u.so||'TRU')==='ALL' ? 'selected' : ''}>ALL</option>
                         <option value="TRU" ${(u.so||'TRU')==='TRU' ? 'selected' : ''}>TRU</option>
                         <option value="LS" ${(u.so||'TRU')==='LS' ? 'selected' : ''}>LS</option>
+                        <option value="PS" ${(u.so||'TRU')==='PS' ? 'selected' : ''}>PS</option>
                     </select>
                 </td>
                 <td>
@@ -1158,6 +1455,7 @@ async function deleteUser(id){
 
 document.addEventListener('DOMContentLoaded', function(){
     loadUsers();
+    applyCurrencyFormatting();
 });
 </script>
 
