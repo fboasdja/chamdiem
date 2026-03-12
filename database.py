@@ -209,11 +209,7 @@ def init_db():
         execute(cur, "ALTER TABLE records ADD COLUMN IF NOT EXISTS tien_khoan_3_5 INTEGER DEFAULT 0;")
         execute(cur, "ALTER TABLE records ADD COLUMN IF NOT EXISTS tien_khoan_6_truy_na INTEGER DEFAULT 0;")
         execute(cur, "ALTER TABLE records ADD COLUMN IF NOT EXISTS tong_tien INTEGER DEFAULT 0;")
-        # Đảm bảo bảng login_logs cũ có cột location
-        try:
-            execute(cur, "ALTER TABLE login_logs ADD COLUMN location TEXT")
-        except Exception:
-            pass
+        execute(cur, "ALTER TABLE login_logs ADD COLUMN IF NOT EXISTS location TEXT;")
         conn.commit()
         conn.close()
         return
