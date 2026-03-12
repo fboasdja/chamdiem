@@ -199,6 +199,9 @@ def init_db():
             "UPDATE users SET password='admin123', role='admin', so_allowed='ALL' WHERE username='admin' AND password='admin';",
         )
         execute(cur, "UPDATE users SET role='admin', so_allowed='ALL' WHERE username='admin';")
+        execute(cur, "ALTER TABLE records ADD COLUMN IF NOT EXISTS an_sai INTEGER DEFAULT 0;")
+        execute(cur, "ALTER TABLE records ADD COLUMN IF NOT EXISTS tong_an INTEGER DEFAULT 0;")
+        execute(cur, "ALTER TABLE records ADD COLUMN IF NOT EXISTS diem INTEGER DEFAULT 0;")
         execute(cur, "ALTER TABLE records ADD COLUMN IF NOT EXISTS giam_sat_1_5 INTEGER DEFAULT 0;")
         execute(cur, "ALTER TABLE records ADD COLUMN IF NOT EXISTS giam_sat_6 INTEGER DEFAULT 0;")
         # Các cột phục vụ tab Tiền xử án
@@ -323,6 +326,18 @@ def init_db():
         "INSERT OR IGNORE INTO settings(key,value) VALUES(?,?)",
         ("monthly_title_PS", "THỐNG KÊ ĐIỂM THÁNG"),
     )
+    try:
+        execute(cur, "ALTER TABLE records ADD COLUMN an_sai INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    try:
+        execute(cur, "ALTER TABLE records ADD COLUMN tong_an INTEGER DEFAULT 0")
+    except Exception:
+        pass
+    try:
+        execute(cur, "ALTER TABLE records ADD COLUMN diem INTEGER DEFAULT 0")
+    except Exception:
+        pass
     try:
         execute(cur, "ALTER TABLE records ADD COLUMN giam_sat_1_5 INTEGER DEFAULT 0")
     except Exception:
